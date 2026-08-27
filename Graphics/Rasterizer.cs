@@ -2,6 +2,7 @@
 using ProTron.Geometry;
 using ProTron.Rendering;
 using System;
+using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -95,15 +96,15 @@ namespace ProTron.Graphics
 				{
 					if (w0 >= 0 && w1 >= 0 && w2 >= 0)
 					{
-						Stats.DepthTests++;
+						Stats.IncrementDepthTests();
 						if (_depthBuffer.TestAndSet(x, y, depth))
 						{
 							_frameBuffer.PutPixelUnChecked(x, y, baseColor);
-							Stats.PixelsDrawn++;
+							Stats.IncrementPixelsDrawn();
 						}
 						else
 						{
-							Stats.DepthRejected++;
+							Stats.IncrementDepthRejected();
 						}
 					}
 					w0 += w0dx;
@@ -156,15 +157,15 @@ namespace ProTron.Graphics
 					y0 >= 0 &&
 					y0 < _frameBuffer.Height)
 				{
-					Stats.DepthTests++;
+					Stats.IncrementDepthTests();
 					if (_depthBuffer.TestAndSet(x0, y0, depth))
 					{
 						_frameBuffer.PutPixel(x0, y0, color);
-						Stats.PixelsDrawn++;
+						Stats.IncrementPixelsDrawn();
 					}
 					else
 					{
-						Stats.DepthRejected++;
+						Stats.IncrementDepthRejected();
 					}
 				}
 

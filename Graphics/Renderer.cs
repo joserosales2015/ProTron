@@ -41,9 +41,9 @@ namespace ProTron.Graphics
 
 		public void Draw(GameObject obj)
 		{
-			Stats.DrawCalls++;
-			Stats.Objects++;
-			Stats.CameraZ = _camera.Transform.Position.Z;
+			Stats.IncrementDrawCalls();
+			Stats.IncrementObjects();
+			Stats.UpdateCameraZ(_camera.Transform.Position.Z);
 			Geometry.Mesh mesh = obj.Mesh;
 			Matrix4x4 world = obj.Transform.GetWorldMatrix();
 			Matrix4x4 worldView = _view * world;
@@ -52,7 +52,7 @@ namespace ProTron.Graphics
 			for (int i = 0; i < mesh.Vertices.Count; i++)
 			{
 				transformedVertices[i] = TransformVertex(mesh.Vertices[i], worldView);
-				Stats.VerticesTransformed++;
+				Stats.IncrementVerticesTransformed();
 			}
 
 			foreach (Triangle triangle in mesh.Triangles)
@@ -61,18 +61,18 @@ namespace ProTron.Graphics
 				Vertex b = transformedVertices[triangle.B];
 				Vertex c = transformedVertices[triangle.C];
 
-				Stats.TrianglesSubmitted++;
+				Stats.IncrementTrianglesSubmitted();
 
 				if (IsBackFace(a.Position, b.Position, c.Position))
 				{
-					Stats.TrianglesCulled++;
+					Stats.IncrementTrianglesCulled();
 					continue;
 				}
 
 				ClipResult clip = Clipper.ClipTriangle(a, b, c, _camera.NearPlane);
 
 				if (clip.Count == 2)
-					Stats.TrianglesClipped++;
+					Stats.IncrementTrianglesClipped();
 
 				if (clip.Count >= 1)
 					DrawTriangle(
@@ -95,7 +95,7 @@ namespace ProTron.Graphics
 			VertexOut o3 = ProjectVertex(triangle.C);
 
 			_rasterizer.DrawFilledTriangle(o1, o2, o3, color);
-			Stats.TrianglesRendered++;
+			Stats.IncrementTrianglesRendered();
 			_rasterizer.DrawTriangleWireframe(o1, o2, o3, original, 0xff00ff00);
 		}
 

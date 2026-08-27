@@ -35,12 +35,15 @@ namespace ProTron.Rendering
 		internal Stopwatch Stopwatch = new Stopwatch();
 
 		private int _frameCounter;
-
+		
 		public RendererStats()
 		{
+			#if DEBUG
 			Stopwatch.Start();
+			#endif
 		}
 
+		[Conditional("DEBUG")]
 		public void BeginFrame()
 		{
 			DrawCalls = 0;
@@ -57,6 +60,7 @@ namespace ProTron.Rendering
 			DepthRejected = 0;
 		}
 
+		[Conditional("DEBUG")]
 		public void EndFrame()
 		{
 			_frameCounter++;
@@ -72,5 +76,54 @@ namespace ProTron.Rendering
 				Stopwatch.Restart();
 			}
 		}
+
+		[Conditional("DEBUG")]
+		public void UpdateCameraZ(float cameraZ)
+		{
+			CameraZ = cameraZ;
+		}
+
+		[Conditional("DEBUG")]
+		public void UpdateFPS(float fps)
+		{
+			FPS = fps;
+		}
+
+		[Conditional("DEBUG")]
+		public void UpdateFrameTime(float frameTime)
+		{
+			FrameTime = frameTime;
+		}
+
+		[Conditional("DEBUG")]
+		public void IncrementDrawCalls() => DrawCalls++;
+
+		[Conditional("DEBUG")]
+		public void IncrementObjects() => Objects++;
+
+		[Conditional("DEBUG")]
+		public void IncrementVerticesTransformed() => VerticesTransformed++;
+
+		[Conditional("DEBUG")]
+		public void IncrementTrianglesSubmitted() => TrianglesSubmitted++;
+
+		[Conditional("DEBUG")]
+		public void IncrementTrianglesClipped() => TrianglesClipped++;
+
+		[Conditional("DEBUG")]
+		public void IncrementTrianglesRendered() => TrianglesRendered++;
+
+		[Conditional("DEBUG")]
+		public void IncrementTrianglesCulled() => TrianglesCulled++;
+
+		[Conditional("DEBUG")]
+		public void IncrementPixelsDrawn() => PixelsDrawn++;
+
+		[Conditional("DEBUG")]
+		public void IncrementDepthTests() => DepthTests++;
+
+		[Conditional("DEBUG")]
+		public void IncrementDepthRejected() => DepthRejected++;
+
 	}
 }
