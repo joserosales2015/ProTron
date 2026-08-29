@@ -87,22 +87,26 @@ namespace ProTron.Graphics
 					c.Position,
 					obj.Material.Color);
 
-				ClipResult clip = Clipper.ClipTriangle(a, b, c, _camera.NearPlane);
+				ClipResult nearClip = Clipper.ClipTriangleAgainstZPlane(a, b, c, _camera.NearPlane, true);
 
-				if (clip.Count == 2)
+				if (nearClip.WasClipped)
 					Stats.IncrementTrianglesClipped();
 
-				if (clip.Count >= 1)
-					DrawTriangle(
-						clip.Triangle1,
+				if (nearClip.Count >= 1)
+				{
+					ClipFarAndDraw(
+						nearClip.Triangle1,
 						triangle,
 						shadedColor);
+				}
 
-				if (clip.Count == 2)
-					DrawTriangle(
-						clip.Triangle2,
+				if (nearClip.Count == 2)
+				{
+					ClipFarAndDraw(
+						nearClip.Triangle2,
 						triangle,
 						shadedColor);
+				}
 			}
 		}
 
@@ -122,6 +126,25 @@ namespace ProTron.Graphics
 				diffuse * _scene.DirectionalLight.Intensity;
 
 			return ColorUtils.Shade(baseColor, intensity);
+		}
+
+		private void ClipFarAndDraw(ClippedTriangle input, Triangle original, uint color)
+		{
+			ClipResult farClip = Clipper.ClipTriangleAgainstZPlane(
+				input.A,
+				input.B,
+				input.C,
+				_camera.FarPlane,
+				keepGreater: false);
+
+			if (farClip.WasClipped)
+				Stats.IncrementTrianglesClipped();
+
+			if (farClip.Count >= 1)
+				DrawTriangle(farClip.Triangle1, original, color);
+
+			if (farClip.Count == 2)
+				DrawTriangle(farClip.Triangle2, original, color);
 		}
 
 		private void DrawTriangle(ClippedTriangle triangle, Triangle original, uint color)

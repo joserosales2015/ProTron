@@ -16,7 +16,7 @@ namespace ProTron.Core
 
 		public float NearPlane { get; set; } = 0.5f;
 
-		public float FarPlane { get; set; } = 1000f;
+		public float FarPlane { get; set; } = 50f;
 
 		public float FieldOfView
 		{

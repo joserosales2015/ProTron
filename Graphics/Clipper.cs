@@ -30,20 +30,25 @@ namespace ProTron.Graphics
 
 			public ClippedTriangle Triangle1;
 			public ClippedTriangle Triangle2;
+			public bool WasClipped;
 		}
 
-		public static ClipResult ClipTriangle(Vertex a, Vertex b, Vertex c, float nearPlane)
+		public static ClipResult ClipTriangleAgainstZPlane(Vertex a, Vertex b, Vertex c, float planeZ, bool keepGreater)
 		{
 			Vector3f originalNormal = Vector3f.Zero;
 			ClipResult result = new ClipResult();
-			bool insideA = a.Position.Z >= nearPlane;
-			bool insideB = b.Position.Z >= nearPlane;
-			bool insideC = c.Position.Z >= nearPlane;
+
+			bool insideA = keepGreater ? a.Position.Z >= planeZ : a.Position.Z <= planeZ;
+			bool insideB = keepGreater ? b.Position.Z >= planeZ : b.Position.Z <= planeZ;
+			bool insideC = keepGreater ? c.Position.Z >= planeZ : c.Position.Z <= planeZ;
+
 			int insideCount = 0;
 			
 			if (insideA) insideCount++;
 			if (insideB) insideCount++;
 			if (insideC) insideCount++;
+
+			result.WasClipped = insideCount != 3;
 
 			switch (insideCount)
 			{
@@ -61,8 +66,8 @@ namespace ProTron.Graphics
 
 					if (insideA)
 					{
-						Vertex p = IntersectNearPlane(a, b, nearPlane);
-						Vertex q = IntersectNearPlane(a, c, nearPlane);
+						Vertex p = IntersectPlaneZ(a, b, planeZ);
+						Vertex q = IntersectPlaneZ(a, c, planeZ);
 
 						result.Count = 1;
 						result.Triangle1 = new ClippedTriangle(a, p, q);
@@ -73,8 +78,8 @@ namespace ProTron.Graphics
 					}
 					else if (insideB)
 					{
-						Vertex p = IntersectNearPlane(b, a, nearPlane);
-						Vertex q = IntersectNearPlane(b, c, nearPlane);
+						Vertex p = IntersectPlaneZ(b, a, planeZ);
+						Vertex q = IntersectPlaneZ(b, c, planeZ);
 
 						result.Count = 1;
 						result.Triangle1 = new ClippedTriangle(b, p, q);
@@ -85,8 +90,8 @@ namespace ProTron.Graphics
 					}
 					else if (insideC)
 					{
-						Vertex p = IntersectNearPlane(c, a, nearPlane);
-						Vertex q = IntersectNearPlane(c, b, nearPlane);
+						Vertex p = IntersectPlaneZ(c, a, planeZ);
+						Vertex q = IntersectPlaneZ(c, b, planeZ);
 
 						result.Count = 1;
 						result.Triangle1 = new ClippedTriangle(c, p, q);
@@ -101,8 +106,8 @@ namespace ProTron.Graphics
 
 					if (insideA && insideB)
 					{
-						Vertex p = IntersectNearPlane(a, c, nearPlane);
-						Vertex q = IntersectNearPlane(b, c, nearPlane);
+						Vertex p = IntersectPlaneZ(a, c, planeZ);
+						Vertex q = IntersectPlaneZ(b, c, planeZ);
 
 						result.Count = 2;
 
@@ -126,8 +131,8 @@ namespace ProTron.Graphics
 					}
 					else if (insideA && insideC)
 					{
-						Vertex p = IntersectNearPlane(a, b, nearPlane);
-						Vertex q = IntersectNearPlane(c, b, nearPlane);
+						Vertex p = IntersectPlaneZ(a, b, planeZ);
+						Vertex q = IntersectPlaneZ(c, b, planeZ);
 
 						result.Count = 2;
 
@@ -151,8 +156,8 @@ namespace ProTron.Graphics
 					}
 					else if (insideB && insideC)
 					{
-						Vertex p = IntersectNearPlane(b, a, nearPlane);
-						Vertex q = IntersectNearPlane(c, a, nearPlane);
+						Vertex p = IntersectPlaneZ(b, a, planeZ);
+						Vertex q = IntersectPlaneZ(c, a, planeZ);
 
 						result.Count = 2;
 
@@ -210,14 +215,14 @@ namespace ProTron.Graphics
 			  - (b.Position.Y - a.Position.Y) * (c.Position.X - a.Position.X);
 		}
 
-		public static Vertex IntersectNearPlane(Vertex a, Vertex b, float nearPlane)
+		public static Vertex IntersectPlaneZ(Vertex a, Vertex b, float planeZ)
 		{
 			float dz = b.Position.Z - a.Position.Z;
 
 			if (MathF.Abs(dz) < 0.000001f)
 				return a;
 
-			float t = (nearPlane - a.Position.Z) / dz;
+			float t = (planeZ - a.Position.Z) / dz;
 
 			return Vertex.Lerp(a, b, t);
 		}
