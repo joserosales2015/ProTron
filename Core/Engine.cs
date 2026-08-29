@@ -46,12 +46,6 @@ namespace ProTron.Core
 		{
 			float deltaTime = Raylib.GetFrameTime();
 
-			if (Raylib.IsWindowResized())
-			{
-				_viewport.Width = Raylib.GetScreenWidth();
-				_viewport.Height = Raylib.GetScreenHeight();
-			}
-
 			_scene.Camera.Update(deltaTime);
 
 			// Solución para CS1612: Asignar la estructura completa, modificar y reasignar
@@ -104,7 +98,7 @@ namespace ProTron.Core
 		public void LoadScene(Scene scene)
 		{
 			_scene = scene;
-			_renderer = new Renderer(_viewport, _scene.Camera, _rasterizer);
+			_renderer = new Renderer(_viewport, _scene, _rasterizer);
 		}
 	}
 }

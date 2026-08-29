@@ -7,13 +7,13 @@ using System.Threading.Tasks;
 
 namespace ProTron.Geometry
 {
-	public class VertexOut
+	public readonly struct VertexOut
 	{
 		// Posición en pantalla
-		public Vector2 Position { get; set; }
+		public Vector2 Position { get; }
 
 		// Profundidad respecto a la cámara
-		public float Depth { get; set; }
+		public float Depth { get; }
 
 		public VertexOut()
 		{

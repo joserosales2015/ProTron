@@ -10,6 +10,8 @@ namespace ProTron.Graphics
 	{
 		public static uint Shade(uint color, float intensity)
 		{
+			intensity = System.Math.Clamp(intensity, 0f, 1f);
+
 			byte a = (byte)((color >> 24) & 0xFF);
 			byte r = (byte)((color >> 16) & 0xFF);
 			byte g = (byte)((color >> 8) & 0xFF);

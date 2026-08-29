@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace ProTron.Geometry
 {
-	public class Triangle
+	public struct Triangle
 	{
 		public int A { get; }
 		public int B { get; }

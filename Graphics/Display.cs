@@ -32,7 +32,7 @@ namespace ProTron.Graphics
 
 			Raylib.UnloadImage(image);
 
-			source = new Rectangle(0, 0, _frameBuffer.Width, _frameBuffer.Height);
+			source = new Rectangle(0, 0, _frameBuffer.Width, -_frameBuffer.Height);
 			dest = new Rectangle(0, 0, Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
 			Raylib.SetTextureFilter(
 				_texture,

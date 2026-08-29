@@ -1,5 +1,6 @@
 ﻿using ProTron.Math;
 using ProTron.Objects;
+using ProTron.Lighting;
 
 namespace ProTron.Core
 {
@@ -10,6 +11,10 @@ namespace ProTron.Core
 		public Camera Camera { get; }
 
 		public IReadOnlyList<GameObject> Objects => _objects;
+
+		public DirectionalLight DirectionalLight { get; } = new();
+
+		public float AmbientLight { get; set; } = 0.15f;
 
 		public Scene()
 		{
