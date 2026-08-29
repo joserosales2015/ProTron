@@ -149,7 +149,9 @@ namespace ProTron.Graphics
 		private VertexOut ProjectVertex(Vertex v)
 		{
 			return new VertexOut(
-				_projection.Project(v.Position),
+				_projection.Project(
+					v.Position, 
+					_camera.FieldOfView),
 				1.0f / v.Position.Z);
 		}
 

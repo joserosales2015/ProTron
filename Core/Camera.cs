@@ -10,13 +10,19 @@ namespace ProTron.Core
 {
 	public class Camera
 	{
+		private float _fieldOfView = 60f;
+
 		public Components.Transform Transform { get; }
 
 		public float NearPlane { get; set; } = 0.5f;
 
 		public float FarPlane { get; set; } = 1000f;
 
-		public float FieldOfView { get; set; } = 60f;
+		public float FieldOfView
+		{
+			get => _fieldOfView;
+			set => _fieldOfView = System.Math.Clamp(value, 1f, 179f);
+		}
 
 		public Camera()
 		{

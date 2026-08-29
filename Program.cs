@@ -17,6 +17,8 @@ namespace ProTron
 			Engine engine = new Engine(viewport);
 			Scene scene = new Scene();
 
+			scene.Camera.FieldOfView = 60f;
+			scene.Camera.NearPlane = 0.5f;
 			scene.AmbientLight = 0.18f;
 			scene.DirectionalLight.Intensity = 0.82f;
 			scene.DirectionalLight.WorldDirection = new Vector3f(-0.5f, -1f, 0.3f).Normalized();

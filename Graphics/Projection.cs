@@ -14,25 +14,28 @@ namespace ProTron.Graphics
 	{
 		private readonly Viewport _viewport;
 
-		public float FocalLength { get; set; } = 500f;
-
 		public Projection(Viewport viewport)
 		{
 			_viewport = viewport;
 		}
 
-		public Vector2 Project(Vector3f point)
+		public Vector2 Project(Vector3f point, float fieldOfView)
 		{
-			if (point.Z <= 0.01f)
-				point.Z = 0.01f;
+			float fovRadians = fieldOfView * MathF.PI / 180f;
+			float tanHalfFov = MathF.Tan(fovRadians * 0.5f);
 
-			float x = point.X * FocalLength / point.Z;
-			float y = point.Y * FocalLength / point.Z;
+			float aspectRatio = _viewport.Width / (float)_viewport.Height;
 
-			x += _viewport.CenterX;
-			y = _viewport.CenterY - y;
+			// Coordenadas normalizadas de pantalla: -1 a 1.
+			float ndcX = point.X / (point.Z * tanHalfFov * aspectRatio);
+			float ndcY = point.Y / (point.Z * tanHalfFov);
 
-			return new Vector2(x, y);
+			// De NDC a píxeles.
+			float screenX = (ndcX + 1f) * 0.5f * _viewport.Width;
+			float screenY = (1f - ndcY) * 0.5f * _viewport.Height;
+
+			return new Vector2(screenX, screenY);
 		}
+
 	}
 }
