@@ -39,7 +39,12 @@ namespace ProTron.Graphics
 				DrawLine(v3, v1, baseColor, DepthBias);
 		}
 
-		public void DrawFilledTriangle(VertexOut v1, VertexOut v2, VertexOut v3, uint baseColor)
+		public void DrawFilledTriangle(
+			VertexOut v1,
+			VertexOut v2,
+			VertexOut v3,
+			uint baseColor,
+			Texture? texture = null)
 		{
 			int minX = (int)MathF.Floor(MathF.Min(v1.Position.X, MathF.Min(v2.Position.X, v3.Position.X)));
 			int maxX = (int)MathF.Ceiling(MathF.Max(v1.Position.X, MathF.Max(v2.Position.X, v3.Position.X)));
@@ -80,10 +85,16 @@ namespace ProTron.Graphics
 			float rowW1 = Edge(v3.Position, v1.Position, p0) * invArea;
 			float rowW2 = Edge(v1.Position, v2.Position, p0) * invArea;
 			
-			float rowDepth = rowW0 * v1.Depth + rowW1 * v2.Depth + rowW2 * v3.Depth;
+			float rowDepth = rowW0 * v1.InverseDepth + rowW1 * v2.InverseDepth + rowW2 * v3.InverseDepth;
+			float rowUOverZ = rowW0 * v1.UOverZ + rowW1 * v2.UOverZ + rowW2 * v3.UOverZ;
+			float rowVOverZ = rowW0 * v1.VOverZ + rowW1 * v2.VOverZ + rowW2 * v3.VOverZ;
 
-			float depthDx = w0dx * v1.Depth	+ w1dx * v2.Depth + w2dx * v3.Depth;
-			float depthDy = w0dy * v1.Depth + w1dy * v2.Depth + w2dy * v3.Depth;
+			float depthDx = w0dx * v1.InverseDepth + w1dx * v2.InverseDepth + w2dx * v3.InverseDepth;
+			float depthDy = w0dy * v1.InverseDepth + w1dy * v2.InverseDepth + w2dy * v3.InverseDepth;
+			float uOverZDx = w0dx * v1.UOverZ + w1dx * v2.UOverZ + w2dx * v3.UOverZ;
+			float uOverZDy = w0dy * v1.UOverZ + w1dy * v2.UOverZ + w2dy * v3.UOverZ;
+			float vOverZDx = w0dx * v1.VOverZ + w1dx * v2.VOverZ + w2dx * v3.VOverZ;
+			float vOverZDy = w0dy * v1.VOverZ + w1dy * v2.VOverZ + w2dy * v3.VOverZ;
 
 			for (int y = minY; y <= maxY; y++)
 			{
@@ -91,6 +102,8 @@ namespace ProTron.Graphics
 				float w1 = rowW1;
 				float w2 = rowW2;
 				float depth = rowDepth;
+				float uOverZ = rowUOverZ;
+				float vOverZ = rowVOverZ;
 
 				for (int x = minX; x <= maxX; x++)
 				{
@@ -99,7 +112,20 @@ namespace ProTron.Graphics
 						Stats.IncrementDepthTests();
 						if (_depthBuffer.TestAndSet(x, y, depth))
 						{
-							_frameBuffer.PutPixelUnChecked(x, y, baseColor);
+							uint pixelColor = baseColor;
+
+							if (texture is not null && depth > 0f)
+							{
+								float z = 1f / depth;
+								float u = uOverZ * z;
+								float v = vOverZ * z;
+
+								pixelColor = ColorUtils.Multiply(
+									baseColor,
+									texture.SampleNearest(u, v));
+							}
+
+							_frameBuffer.PutPixelUnChecked(x, y, pixelColor);
 							Stats.IncrementPixelsDrawn();
 						}
 						else
@@ -112,6 +138,8 @@ namespace ProTron.Graphics
 					w2 += w2dx;
 
 					depth += depthDx;
+					uOverZ += uOverZDx;
+					vOverZ += vOverZDx;
 				}
 
 				rowW0 += w0dy;
@@ -119,6 +147,8 @@ namespace ProTron.Graphics
 				rowW2 += w2dy;
 
 				rowDepth += depthDy;
+				rowUOverZ += uOverZDy;
+				rowVOverZ += vOverZDy;
 			}
 		}
 
@@ -130,8 +160,8 @@ namespace ProTron.Graphics
 			int x1 = (int)b.Position.X;
 			int y1 = (int)b.Position.Y;
 
-			float z0 = a.Depth;
-			float z1 = b.Depth;
+			float z0 = a.InverseDepth;
+			float z1 = b.InverseDepth;
 
 			int dx = System.Math.Abs(x1 - x0);
 			int dy = System.Math.Abs(y1 - y0);

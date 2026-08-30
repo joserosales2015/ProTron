@@ -1,29 +1,28 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ProTron.Geometry
 {
 	public readonly struct VertexOut
 	{
-		// Posición en pantalla
 		public Vector2 Position { get; }
 
-		// Profundidad respecto a la cámara
-		public float Depth { get; }
+		// Profundidad inversa: 1/Z. Valores mayores están más cerca.
+		public float InverseDepth { get; }
 
-		public VertexOut()
-		{
-		}
+		// UV multiplicadas por 1/Z para la corrección de perspectiva.
+		public float UOverZ { get; }
+		public float VOverZ { get; }
 
-		public VertexOut(Vector2 screenPosition, float depth)
+		public VertexOut(
+			Vector2 screenPosition,
+			float inverseDepth,
+			float uOverZ,
+			float vOverZ)
 		{
 			Position = screenPosition;
-			Depth = depth;
+			InverseDepth = inverseDepth;
+			UOverZ = uOverZ;
+			VOverZ = vOverZ;
 		}
-
 	}
 }

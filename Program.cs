@@ -8,8 +8,8 @@ namespace ProTron
 {
     internal class Program
     {
-		public const int InternalWidth = 720;//960;//480;//
-		public const int InternalHeight = 405;//540;//270;//
+		public const int InternalWidth = 960;//720;//480;//
+		public const int InternalHeight = 540;//405;//270;//
 
 		static void Main(string[] args)
         {
@@ -21,16 +21,15 @@ namespace ProTron
 			scene.Camera.NearPlane = 0.5f;
 			scene.AmbientLight = 0.18f;
 			scene.DirectionalLight.Intensity = 0.82f;
-			scene.DirectionalLight.WorldDirection = new Vector3f(-0.5f, -1f, 0.3f).Normalized();
+			scene.DirectionalLight.WorldDirection = new Vector3f(0.0f, -1.0f, -1.0f).Normalized();
 
 			List<GameObject> cubes = new()
 			{
-				new Cube(2) { Transform = { Position = new Vector3f(-2, 0, 8) }, Material = new ProTron.Objects.Material(0xFF0000dd) },
-				new Cube(2) { Transform = { Position = new Vector3f(2, 0, 8) }, Material = new ProTron.Objects.Material(0xFF00dd00) },
-				new Cube(2) { Transform = { Position = new Vector3f(0, 0, 8) }, Material = new ProTron.Objects.Material(0xFFdd0000) },
-				new Cube(2) { Transform = { Position = new Vector3f(0, -2, 8) }, Material = new ProTron.Objects.Material(0xFFdd00dd) },
-				new Cube(2) { Transform = { Position = new Vector3f(0, 2, 8) }, Material = new ProTron.Objects.Material(0xFF00dddd) },
-				
+				new Cube(2) { Transform = { Position = new Vector3f(-2, 0, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
+				new Cube(2) { Transform = { Position = new Vector3f(2, 0, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
+				new Cube(2) { Transform = { Position = new Vector3f(0, 0, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
+				new Cube(2) { Transform = { Position = new Vector3f(0, -2, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
+				new Cube(2) { Transform = { Position = new Vector3f(0, 2, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
 			};
 
 			scene.AddRange(cubes);

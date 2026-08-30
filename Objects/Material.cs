@@ -10,6 +10,10 @@ namespace ProTron.Objects
 	{
 		public uint Color { get; set; }
 
+		public string? TexturePath { get; set; }
+
+		public ProTron.Graphics.Texture? Texture { get; set; }
+
 		public Material(uint color)
 		{
 			Color = color;

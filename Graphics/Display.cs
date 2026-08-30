@@ -41,8 +41,6 @@ namespace ProTron.Graphics
 
 		public void Present()
 		{
-			// aquí actualizaremos la textura
-			// con los píxeles del framebuffer
 			Raylib.UpdateTexture(_texture, _frameBuffer.Pixels);
 			Raylib.DrawTexturePro(_texture, source, dest, Vector2.Zero, 0.0f, Color.White);
 		}

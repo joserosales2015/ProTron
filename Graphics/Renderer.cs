@@ -110,7 +110,8 @@ namespace ProTron.Graphics
 					DrawTriangle(
 						clippedTriangles[i],
 						triangle,
-						shadedColor);
+						shadedColor,
+						obj.Material.Texture);
 				}
 			}
 		}
@@ -133,13 +134,17 @@ namespace ProTron.Graphics
 			return ColorUtils.Shade(baseColor, intensity);
 		}
 
-		private void DrawTriangle(ClippedTriangle triangle, Triangle original, uint color)
+		private void DrawTriangle(
+			ClippedTriangle triangle,
+			Triangle original,
+			uint color,
+			Texture? texture)
 		{
 			VertexOut o1 = ProjectVertex(triangle.A);
 			VertexOut o2 = ProjectVertex(triangle.B);
 			VertexOut o3 = ProjectVertex(triangle.C);
 
-			_rasterizer.DrawFilledTriangle(o1, o2, o3, color);
+			_rasterizer.DrawFilledTriangle(o1, o2, o3, color, texture);
 			Stats.IncrementTrianglesRendered();
 			//_rasterizer.DrawTriangleWireframe(o1, o2, o3, original, 0xff00ff00);
 		}
@@ -152,11 +157,15 @@ namespace ProTron.Graphics
 
 		private VertexOut ProjectVertex(Vertex v)
 		{
+			float inverseDepth = 1.0f / v.Position.Z;
+
 			return new VertexOut(
 				_projection.Project(
 					v.Position, 
 					_camera.FieldOfView),
-				1.0f / v.Position.Z);
+				inverseDepth,
+				v.UV.X * inverseDepth,
+				v.UV.Y * inverseDepth);
 		}
 
 		private bool IsBackFace(Vector3f v1, Vector3f v2, Vector3f v3)
@@ -177,7 +186,10 @@ namespace ProTron.Graphics
 		{
 			Vector4f p = worldView * vertex.Position.ToVector4();
 
-			return new Vertex(new Vector3f(p.X, p.Y, p.Z));
+			return new Vertex(
+				new Vector3f(p.X, p.Y, p.Z),
+				vertex.Normal,
+				vertex.UV);
 		}
 	}
 }

@@ -29,6 +29,9 @@ namespace ProTron.Core
 		{
 			//Raylib.SetConfigFlags(ConfigFlags.FullscreenMode);
 			Raylib.InitWindow(_viewport.Width, _viewport.Height, "ProTron");
+
+			LoadSceneTextures();
+
 			Raylib.SetTargetFPS(150);
 			_display.Initialize();
 
@@ -40,6 +43,55 @@ namespace ProTron.Core
 			
 			_display.Unload();
 			Raylib.CloseWindow();
+		}
+
+		private void Draw()
+		{
+			Raylib.BeginDrawing();
+
+			_frameBuffer.Clear(ColorUtils.PackRgba(0, 0, 0));
+			_depthBuffer.Clear();
+			_renderer.Stats.BeginFrame();
+			_renderer.BeginFrame();
+
+			foreach (var obj in _scene.Objects)
+			{
+				_renderer.Draw(obj);
+			}
+
+			_renderer.Stats.EndFrame();
+			
+			_display.Present();
+			Debugging.DebugOverlay.Draw(_renderer.Stats);
+
+			Raylib.EndDrawing();
+		}
+
+		public void LoadScene(Scene scene)
+		{
+			_scene = scene;
+			_renderer = new Renderer(_viewport, _scene, _rasterizer);
+		}
+
+		private void LoadSceneTextures()
+		{
+			Dictionary<string, Texture> loadedTextures = new();
+
+			foreach (GameObject obj in _scene.Objects)
+			{
+				string? path = obj.Material.TexturePath;
+
+				if (string.IsNullOrWhiteSpace(path))
+					continue;
+
+				if (!loadedTextures.TryGetValue(path, out Texture? texture))
+				{
+					texture = Texture.LoadFromFile(path);
+					loadedTextures.Add(path, texture);
+				}
+
+				obj.Material.Texture = texture;
+			}
 		}
 
 		private void Update()
@@ -71,34 +123,6 @@ namespace ProTron.Core
 			}
 
 			_scene.SortFrontToBack(_scene.Camera);
-		}
-
-		private void Draw()
-		{
-			Raylib.BeginDrawing();
-
-			_frameBuffer.Clear(0xFF000000);
-			_depthBuffer.Clear();
-			_renderer.Stats.BeginFrame();
-			_renderer.BeginFrame();
-
-			foreach (var obj in _scene.Objects)
-			{
-				_renderer.Draw(obj);
-			}
-
-			_renderer.Stats.EndFrame();
-			
-			_display.Present();
-			Debugging.DebugOverlay.Draw(_renderer.Stats);
-
-			Raylib.EndDrawing();
-		}
-
-		public void LoadScene(Scene scene)
-		{
-			_scene = scene;
-			_renderer = new Renderer(_viewport, _scene, _rasterizer);
 		}
 	}
 }

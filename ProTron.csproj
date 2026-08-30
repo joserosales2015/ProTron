@@ -13,6 +13,8 @@
   </ItemGroup>
 
   <ItemGroup>
+	  <None Update="Assets\**\*"
+		  CopyToOutputDirectory="PreserveNewest" />
     <Folder Include="Scenes\" />
   </ItemGroup>
 

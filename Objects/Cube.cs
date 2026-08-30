@@ -1,10 +1,7 @@
-﻿using ProTron.Geometry;
+using ProTron.Geometry;
 using ProTron.Graphics;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+using ProTron.Math;
+using System.Numerics;
 
 namespace ProTron.Objects
 {
@@ -13,7 +10,6 @@ namespace ProTron.Objects
 		public Cube(float size)
 		{
 			Mesh = new Mesh();
-
 			Build(size);
 		}
 
@@ -21,82 +17,71 @@ namespace ProTron.Objects
 		{
 			float h = size / 2f;
 
-			Mesh.Vertices.Add(new Vertex(-h, -h, -h)); //0
-			Mesh.Vertices.Add(new Vertex(h, -h, -h)); //1
-			Mesh.Vertices.Add(new Vertex(-h, h, -h)); //2
-			Mesh.Vertices.Add(new Vertex(h, h, -h)); //3
+			// Cada cara tiene sus propios vértices porque las UV tienen
+			// discontinuidades en las esquinas del cubo.
+			AddQuad(
+				new Vector3f(-h, -h, -h),
+				new Vector3f(h, -h, -h),
+				new Vector3f(h, h, -h),
+				new Vector3f(-h, h, -h));
 
-			Mesh.Vertices.Add(new Vertex(-h, -h, h)); //4
-			Mesh.Vertices.Add(new Vertex(h, -h, h)); //5
-			Mesh.Vertices.Add(new Vertex(-h, h, h)); //6
-			Mesh.Vertices.Add(new Vertex(h, h, h)); //7
+			AddQuad(
+				new Vector3f(-h, -h, h),
+				new Vector3f(-h, h, h),
+				new Vector3f(h, h, h),
+				new Vector3f(h, -h, h));
 
-			// Cara delantera
-			Mesh.Triangles.Add(new Triangle(0, 1, 2)
+			AddQuad(
+				new Vector3f(-h, -h, -h),
+				new Vector3f(-h, h, -h),
+				new Vector3f(-h, h, h),
+				new Vector3f(-h, -h, h));
+
+			AddQuad(
+				new Vector3f(h, -h, -h),
+				new Vector3f(h, -h, h),
+				new Vector3f(h, h, h),
+				new Vector3f(h, h, -h));
+
+			AddQuad(
+				new Vector3f(-h, h, -h),
+				new Vector3f(h, h, -h),
+				new Vector3f(h, h, h),
+				new Vector3f(-h, h, h));
+
+			AddQuad(
+				new Vector3f(-h, -h, -h),
+				new Vector3f(-h, -h, h),
+				new Vector3f(h, -h, h),
+				new Vector3f(h, -h, -h));
+		}
+
+		private void AddQuad(
+			Vector3f v0,
+			Vector3f v1,
+			Vector3f v2,
+			Vector3f v3)
+		{
+			int first = Mesh.Vertices.Count;
+
+			Mesh.Vertices.Add(new Vertex(v0, Vector3f.Zero, new Vector2(0f, 1f)));
+			Mesh.Vertices.Add(new Vertex(v1, Vector3f.Zero, new Vector2(1f, 1f)));
+			Mesh.Vertices.Add(new Vertex(v2, Vector3f.Zero, new Vector2(1f, 0f)));
+			Mesh.Vertices.Add(new Vertex(v3, Vector3f.Zero, new Vector2(0f, 0f)));
+
+			Mesh.Triangles.Add(new Triangle(first, first + 1, first + 2)
 			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.CA
+				VisibleEdges = Triangle.TriangleEdges.AB |
+					Triangle.TriangleEdges.CA
 			});
 
-			Mesh.Triangles.Add(new Triangle(1, 3, 2)
+			Mesh.Triangles.Add(new Triangle(first, first + 2, first + 3)
 			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.BC
-			});
-
-			// Cara trasera
-			Mesh.Triangles.Add(new Triangle(4, 6, 5)
-			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.CA
-			});
-
-			Mesh.Triangles.Add(new Triangle(6, 7, 5)
-			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.BC
-			});
-
-			// Cara izquierda
-			Mesh.Triangles.Add(new Triangle(0, 2, 6)
-			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.BC
-			});
-
-			Mesh.Triangles.Add(new Triangle(0, 6, 4)
-			{
-				VisibleEdges = Triangle.TriangleEdges.BC | Triangle.TriangleEdges.CA
-			});
-
-			// Cara derecha
-			Mesh.Triangles.Add(new Triangle(1, 5, 3)
-			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.CA
-			});
-
-			Mesh.Triangles.Add(new Triangle(3, 5, 7)
-			{
-				VisibleEdges = Triangle.TriangleEdges.BC | Triangle.TriangleEdges.CA
-			});
-
-			// Cara superior
-			Mesh.Triangles.Add(new Triangle(2, 3, 6)
-			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.CA
-			});
-
-			Mesh.Triangles.Add(new Triangle(6, 3, 7)
-			{
-				VisibleEdges = Triangle.TriangleEdges.BC | Triangle.TriangleEdges.CA
-			});
-
-			// Cara inferior
-			Mesh.Triangles.Add(new Triangle(0, 4, 1)
-			{
-				VisibleEdges = Triangle.TriangleEdges.AB | Triangle.TriangleEdges.CA
-			});
-
-			Mesh.Triangles.Add(new Triangle(1, 4, 5)
-			{
-				VisibleEdges = Triangle.TriangleEdges.BC | Triangle.TriangleEdges.CA
+				VisibleEdges = Triangle.TriangleEdges.BC |
+					Triangle.TriangleEdges.CA
 			});
 		}
+
 		public override void Update(float deltaTime)
 		{
 			var rotation = Transform.Rotation;
