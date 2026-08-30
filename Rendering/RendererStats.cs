@@ -24,6 +24,7 @@ namespace ProTron.Rendering
 		public int VerticesTransformed { get; internal set; }
 		public int TrianglesSubmitted { get; internal set; }
 		public int TrianglesClipped { get; internal set; }
+		public int TrianglesRejected { get; internal set; }
 		public int TrianglesRendered { get; internal set; }
 		public int TrianglesCulled { get; internal set; }
 
@@ -52,6 +53,7 @@ namespace ProTron.Rendering
 			VerticesTransformed = 0;
 			TrianglesSubmitted = 0;
 			TrianglesClipped = 0;
+			TrianglesRejected = 0;
 			TrianglesRendered = 0;
 			TrianglesCulled = 0;
 
@@ -109,6 +111,9 @@ namespace ProTron.Rendering
 
 		[Conditional("DEBUG")]
 		public void IncrementTrianglesClipped() => TrianglesClipped++;
+
+		[Conditional("DEBUG")]
+		public void IncrementTrianglesRejected() => TrianglesRejected++;
 
 		[Conditional("DEBUG")]
 		public void IncrementTrianglesRendered() => TrianglesRendered++;

@@ -67,6 +67,9 @@ namespace ProTron.Graphics
 				Stats.IncrementVerticesTransformed();
 			}
 
+			Span<ClippedTriangle> clippedTriangles =
+				stackalloc ClippedTriangle[Clipper.MaxClippedTriangles];
+
 			foreach (Triangle triangle in mesh.Triangles)
 			{
 				Vertex a = _transformedVertices[triangle.A];
@@ -87,23 +90,25 @@ namespace ProTron.Graphics
 					c.Position,
 					obj.Material.Color);
 
-				ClipResult nearClip = Clipper.ClipTriangleAgainstZPlane(a, b, c, _camera.NearPlane, true);
+				ClipResult clipResult = Clipper.ClipTriangleAgainstFrustum(
+					a,
+					b,
+					c,
+					_camera.NearPlane,
+					_camera.FarPlane,
+					_camera.FieldOfView,
+					_projection.AspectRatio,
+					clippedTriangles);
 
-				if (nearClip.WasClipped)
+				if (clipResult.WasRejected)
+					Stats.IncrementTrianglesRejected();
+				else if (clipResult.WasClipped)
 					Stats.IncrementTrianglesClipped();
 
-				if (nearClip.Count >= 1)
+				for (int i = 0; i < clipResult.TriangleCount; i++)
 				{
-					ClipFarAndDraw(
-						nearClip.Triangle1,
-						triangle,
-						shadedColor);
-				}
-
-				if (nearClip.Count == 2)
-				{
-					ClipFarAndDraw(
-						nearClip.Triangle2,
+					DrawTriangle(
+						clippedTriangles[i],
 						triangle,
 						shadedColor);
 				}
@@ -128,32 +133,8 @@ namespace ProTron.Graphics
 			return ColorUtils.Shade(baseColor, intensity);
 		}
 
-		private void ClipFarAndDraw(ClippedTriangle input, Triangle original, uint color)
-		{
-			ClipResult farClip = Clipper.ClipTriangleAgainstZPlane(
-				input.A,
-				input.B,
-				input.C,
-				_camera.FarPlane,
-				keepGreater: false);
-
-			if (farClip.WasClipped)
-				Stats.IncrementTrianglesClipped();
-
-			if (farClip.Count >= 1)
-				DrawTriangle(farClip.Triangle1, original, color);
-
-			if (farClip.Count == 2)
-				DrawTriangle(farClip.Triangle2, original, color);
-		}
-
 		private void DrawTriangle(ClippedTriangle triangle, Triangle original, uint color)
 		{
-			Vector3f edge1 = triangle.B.Position - triangle.A.Position;
-			Vector3f edge2 = triangle.C.Position - triangle.A.Position;
-			
-			Vector3f normal = Vector3f.Cross(edge1, edge2).Normalized();
-
 			VertexOut o1 = ProjectVertex(triangle.A);
 			VertexOut o2 = ProjectVertex(triangle.B);
 			VertexOut o3 = ProjectVertex(triangle.C);

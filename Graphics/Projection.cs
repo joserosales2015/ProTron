@@ -14,6 +14,9 @@ namespace ProTron.Graphics
 	{
 		private readonly Viewport _viewport;
 
+		public float AspectRatio =>
+			_viewport.Width / (float)_viewport.Height;
+
 		public Projection(Viewport viewport)
 		{
 			_viewport = viewport;
@@ -24,7 +27,7 @@ namespace ProTron.Graphics
 			float fovRadians = fieldOfView * MathF.PI / 180f;
 			float tanHalfFov = MathF.Tan(fovRadians * 0.5f);
 
-			float aspectRatio = _viewport.Width / (float)_viewport.Height;
+			float aspectRatio = AspectRatio;
 
 			// Coordenadas normalizadas de pantalla: -1 a 1.
 			float ndcX = point.X / (point.Z * tanHalfFov * aspectRatio);

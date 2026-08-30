@@ -1,20 +1,19 @@
-﻿using ProTron.Geometry;
+using ProTron.Geometry;
 using ProTron.Math;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace ProTron.Graphics
 {
 	public static class Clipper
 	{
-		public struct ClippedTriangle
+		// El clipping de un triángulo contra un frustum puede producir hasta
+		// siete triángulos. Ocho deja margen y evita asignaciones por frame.
+		public const int MaxClippedTriangles = 8;
+
+		public readonly struct ClippedTriangle
 		{
-			public Vertex A;
-			public Vertex B;
-			public Vertex C;
+			public Vertex A { get; }
+			public Vertex B { get; }
+			public Vertex C { get; }
 
 			public ClippedTriangle(Vertex a, Vertex b, Vertex c)
 			{
@@ -24,207 +23,149 @@ namespace ProTron.Graphics
 			}
 		}
 
-		public struct ClipResult
+		public readonly struct ClipResult
 		{
-			public int Count;
+			public int TriangleCount { get; }
+			public bool WasClipped { get; }
+			public bool WasRejected => TriangleCount == 0;
 
-			public ClippedTriangle Triangle1;
-			public ClippedTriangle Triangle2;
-			public bool WasClipped;
-		}
-
-		public static ClipResult ClipTriangleAgainstZPlane(Vertex a, Vertex b, Vertex c, float planeZ, bool keepGreater)
-		{
-			Vector3f originalNormal = Vector3f.Zero;
-			ClipResult result = new ClipResult();
-
-			bool insideA = keepGreater ? a.Position.Z >= planeZ : a.Position.Z <= planeZ;
-			bool insideB = keepGreater ? b.Position.Z >= planeZ : b.Position.Z <= planeZ;
-			bool insideC = keepGreater ? c.Position.Z >= planeZ : c.Position.Z <= planeZ;
-
-			int insideCount = 0;
-			
-			if (insideA) insideCount++;
-			if (insideB) insideCount++;
-			if (insideC) insideCount++;
-
-			result.WasClipped = insideCount != 3;
-
-			switch (insideCount)
+			public ClipResult(int triangleCount, bool wasClipped)
 			{
-				case 0:
-					return result;
-
-				case 3:
-					result.Count = 1;
-					result.Triangle1 = new ClippedTriangle(a, b, c);
-
-					return result;
-
-				case 1:
-					originalNormal = Vector3f.Cross(b.Position - a.Position, c.Position - a.Position);
-
-					if (insideA)
-					{
-						Vertex p = IntersectPlaneZ(a, b, planeZ);
-						Vertex q = IntersectPlaneZ(a, c, planeZ);
-
-						result.Count = 1;
-						result.Triangle1 = new ClippedTriangle(a, p, q);
-
-						EnsureWinding(originalNormal, ref result.Triangle1);
-
-						return result;
-					}
-					else if (insideB)
-					{
-						Vertex p = IntersectPlaneZ(b, a, planeZ);
-						Vertex q = IntersectPlaneZ(b, c, planeZ);
-
-						result.Count = 1;
-						result.Triangle1 = new ClippedTriangle(b, p, q);
-						
-						EnsureWinding(originalNormal, ref result.Triangle1);
-
-						return result;
-					}
-					else if (insideC)
-					{
-						Vertex p = IntersectPlaneZ(c, a, planeZ);
-						Vertex q = IntersectPlaneZ(c, b, planeZ);
-
-						result.Count = 1;
-						result.Triangle1 = new ClippedTriangle(c, p, q);
-
-						EnsureWinding(originalNormal, ref result.Triangle1);
-
-						return result;
-					}
-					break;
-				case 2:
-					originalNormal = Vector3f.Cross(b.Position - a.Position, c.Position - a.Position);
-
-					if (insideA && insideB)
-					{
-						Vertex p = IntersectPlaneZ(a, c, planeZ);
-						Vertex q = IntersectPlaneZ(b, c, planeZ);
-
-						result.Count = 2;
-
-						result.Triangle1 =
-							new ClippedTriangle(
-								a,
-								b,
-								p);
-
-						EnsureWinding(originalNormal, ref result.Triangle1);
-
-						result.Triangle2 =
-							new ClippedTriangle(
-								b,
-								q,
-								p);
-
-						EnsureWinding(originalNormal, ref result.Triangle2);
-
-						return result;
-					}
-					else if (insideA && insideC)
-					{
-						Vertex p = IntersectPlaneZ(a, b, planeZ);
-						Vertex q = IntersectPlaneZ(c, b, planeZ);
-
-						result.Count = 2;
-
-						result.Triangle1 =
-							new ClippedTriangle(
-								a,
-								c,
-								p);
-
-						EnsureWinding(originalNormal, ref result.Triangle1);
-
-						result.Triangle2 =
-							new ClippedTriangle(
-								c,
-								q,
-								p);
-
-						EnsureWinding(originalNormal, ref result.Triangle2);
-
-						return result;
-					}
-					else if (insideB && insideC)
-					{
-						Vertex p = IntersectPlaneZ(b, a, planeZ);
-						Vertex q = IntersectPlaneZ(c, a, planeZ);
-
-						result.Count = 2;
-
-						result.Triangle1 =
-							new ClippedTriangle(
-								b,
-								c,
-								p);
-
-						EnsureWinding(originalNormal, ref result.Triangle1);
-
-						result.Triangle2 =
-							new ClippedTriangle(
-								c,
-								q,
-								p);
-
-						EnsureWinding(originalNormal, ref result.Triangle2);
-
-						return result;
-					}
-
-					return result;
-			}
-
-			return result;
-		}
-
-		private static void EnsureWinding(Vector3f originalNormal, ref ClippedTriangle triangle)
-		{
-			Vector3f edge1 = triangle.B.Position - triangle.A.Position;
-			Vector3f edge2 = triangle.C.Position - triangle.A.Position;
-			Vector3f normal = Vector3f.Cross(edge1, edge2);
-
-			if (Vector3f.Dot(normal, originalNormal) < 0)
-			{
-				Vertex temp = triangle.B;
-				triangle.B = triangle.C;
-				triangle.C = temp;
+				TriangleCount = triangleCount;
+				WasClipped = wasClipped;
 			}
 		}
 
-		private static float SignedArea(Vertex a, Vertex b, Vertex c)
+		private readonly struct Plane
 		{
-			Vector3f ab = b.Position - a.Position;
-			Vector3f ac = c.Position - a.Position;
+			public Vector3f Normal { get; }
+			public float Distance { get; }
 
-			return Vector3f.Cross(ab, ac).Z;
+			public Plane(Vector3f normal, float distance = 0f)
+			{
+				Normal = normal;
+				Distance = distance;
+			}
+
+			public float SignedDistance(Vertex vertex)
+			{
+				return Vector3f.Dot(Normal, vertex.Position) + Distance;
+			}
 		}
 
-		private static float SignedArea2D(Vertex a, Vertex b, Vertex c)
+		public static ClipResult ClipTriangleAgainstFrustum(
+			Vertex a,
+			Vertex b,
+			Vertex c,
+			float nearPlane,
+			float farPlane,
+			float fieldOfView,
+			float aspectRatio,
+			Span<ClippedTriangle> output)
 		{
-			return
-				(b.Position.X - a.Position.X) * (c.Position.Y - a.Position.Y)
-			  - (b.Position.Y - a.Position.Y) * (c.Position.X - a.Position.X);
+			if (output.Length < MaxClippedTriangles)
+				throw new ArgumentException(
+					$"El buffer de salida debe tener al menos {MaxClippedTriangles} elementos.",
+					nameof(output));
+
+			float halfFovRadians = fieldOfView * MathF.PI / 360f;
+			float tanHalfFovY = MathF.Tan(halfFovRadians);
+			float tanHalfFovX = tanHalfFovY * aspectRatio;
+
+			Span<Vertex> firstBuffer = stackalloc Vertex[10];
+			Span<Vertex> secondBuffer = stackalloc Vertex[10];
+
+			firstBuffer[0] = a;
+			firstBuffer[1] = b;
+			firstBuffer[2] = c;
+
+			int vertexCount = 3;
+			bool wasClipped = false;
+
+			Span<Plane> planes = stackalloc Plane[6];
+			planes[0] = new Plane(new Vector3f(0f, 0f, 1f), -nearPlane);
+			planes[1] = new Plane(new Vector3f(0f, 0f, -1f), farPlane);
+			planes[2] = new Plane(new Vector3f(1f, 0f, tanHalfFovX));
+			planes[3] = new Plane(new Vector3f(-1f, 0f, tanHalfFovX));
+			planes[4] = new Plane(new Vector3f(0f, 1f, tanHalfFovY));
+			planes[5] = new Plane(new Vector3f(0f, -1f, tanHalfFovY));
+
+			foreach (Plane plane in planes)
+			{
+				vertexCount = ClipPolygonAgainstPlane(
+					firstBuffer,
+					vertexCount,
+					plane,
+					secondBuffer,
+					out bool planeClipped);
+
+				wasClipped |= planeClipped;
+
+				if (vertexCount == 0)
+					return new ClipResult(0, true);
+
+				Span<Vertex> temporary = firstBuffer;
+				firstBuffer = secondBuffer;
+				secondBuffer = temporary;
+			}
+
+			int triangleCount = System.Math.Max(0, vertexCount - 2);
+
+			for (int i = 0; i < triangleCount; i++)
+			{
+				output[i] = new ClippedTriangle(
+					firstBuffer[0],
+					firstBuffer[i + 1],
+					firstBuffer[i + 2]);
+			}
+
+			return new ClipResult(triangleCount, wasClipped);
 		}
 
-		public static Vertex IntersectPlaneZ(Vertex a, Vertex b, float planeZ)
+		private static int ClipPolygonAgainstPlane(
+			ReadOnlySpan<Vertex> input,
+			int inputCount,
+			Plane plane,
+			Span<Vertex> output,
+			out bool wasClipped)
 		{
-			float dz = b.Position.Z - a.Position.Z;
+			wasClipped = false;
 
-			if (MathF.Abs(dz) < 0.000001f)
-				return a;
+			if (inputCount == 0)
+				return 0;
 
-			float t = (planeZ - a.Position.Z) / dz;
+			int outputCount = 0;
+			Vertex previous = input[inputCount - 1];
+			float previousDistance = plane.SignedDistance(previous);
+			bool previousInside = previousDistance >= 0f;
 
-			return Vertex.Lerp(a, b, t);
+			for (int i = 0; i < inputCount; i++)
+			{
+				Vertex current = input[i];
+				float currentDistance = plane.SignedDistance(current);
+				bool currentInside = currentDistance >= 0f;
+
+				if (currentInside != previousInside)
+				{
+					wasClipped = true;
+					float t = previousDistance /
+						(previousDistance - currentDistance);
+
+					output[outputCount++] = Vertex.Lerp(previous, current, t);
+				}
+
+				if (currentInside)
+					output[outputCount++] = current;
+
+				previous = current;
+				previousDistance = currentDistance;
+				previousInside = currentInside;
+			}
+
+			if (outputCount != inputCount)
+				wasClipped = true;
+
+			return outputCount;
 		}
 	}
 }

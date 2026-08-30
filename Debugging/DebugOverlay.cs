@@ -45,6 +45,9 @@ namespace ProTron.Debugging
 			Raylib.DrawText($"Triangles Clipped: {stats.TrianglesClipped}", x, y, 20, Color.White);
 			y += lineHeight;
 
+			Raylib.DrawText($"Triangles Rejected: {stats.TrianglesRejected}", x, y, 20, Color.White);
+			y += lineHeight;
+
 			Raylib.DrawText($"Depth Tests: {stats.DepthTests:N0}", x, y, 20, Color.White); 
 			y += lineHeight;
 			
