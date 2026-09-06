@@ -8,25 +8,68 @@ using System.Threading.Tasks;
 
 namespace ProTron.Core
 {
-	public static class RenderQueue
+	public sealed class RenderQueue
 	{
-		public static void SortFrontToBack(
-			List<GameObject> objects,
-			Camera camera)
+		private readonly List<GameObject> _opaqueObjects = new();
+		private readonly List<GameObject> _transparentObjects = new();
+		private readonly DistanceComparer _frontToBack = new(descending: false);
+		private readonly DistanceComparer _backToFront = new(descending: true);
+
+		public IReadOnlyList<GameObject> OpaqueObjects => _opaqueObjects;
+		public IReadOnlyList<GameObject> TransparentObjects => _transparentObjects;
+
+		public void Build(IEnumerable<GameObject> objects, Camera camera)
 		{
-			objects.Sort((a, b) =>
+			ArgumentNullException.ThrowIfNull(objects);
+			ArgumentNullException.ThrowIfNull(camera);
+
+			_opaqueObjects.Clear();
+			_transparentObjects.Clear();
+
+			foreach (GameObject obj in objects)
 			{
-				Vector3f da =
-					a.Transform.Position - camera.Transform.Position;
+				if (obj.Material.BlendMode == MaterialBlendMode.AlphaBlend)
+					_transparentObjects.Add(obj);
+				else
+					_opaqueObjects.Add(obj);
+			}
 
-				Vector3f db =
-					b.Transform.Position - camera.Transform.Position;
+			_frontToBack.CameraPosition = camera.Transform.Position;
+			_backToFront.CameraPosition = camera.Transform.Position;
+			_opaqueObjects.Sort(_frontToBack);
+			_transparentObjects.Sort(_backToFront);
+		}
 
-				float distA = Vector3f.Dot(da, da);
-				float distB = Vector3f.Dot(db, db);
+		private sealed class DistanceComparer : IComparer<GameObject>
+		{
+			private readonly bool _descending;
 
-				return distA.CompareTo(distB);
-			});
+			public Vector3f CameraPosition { get; set; }
+
+			public DistanceComparer(bool descending)
+			{
+				_descending = descending;
+			}
+
+			public int Compare(GameObject? first, GameObject? second)
+			{
+				if (ReferenceEquals(first, second))
+					return 0;
+
+				if (first is null)
+					return 1;
+
+				if (second is null)
+					return -1;
+
+				float firstDistance =
+					(first.Transform.Position - CameraPosition).LengthSquared;
+				float secondDistance =
+					(second.Transform.Position - CameraPosition).LengthSquared;
+				int comparison = firstDistance.CompareTo(secondDistance);
+
+				return _descending ? -comparison : comparison;
+			}
 		}
 	}
 }

@@ -36,20 +36,94 @@ namespace ProTron.Graphics
 			}
 		}
 
-		private readonly struct Plane
+		internal readonly struct Plane
 		{
 			public Vector3f Normal { get; }
 			public float Distance { get; }
 
 			public Plane(Vector3f normal, float distance = 0f)
 			{
-				Normal = normal;
-				Distance = distance;
+				float length = normal.Length;
+
+				if (length <= 0f || !float.IsFinite(length))
+					throw new ArgumentException("La normal del plano debe ser válida.", nameof(normal));
+
+				Normal = normal / length;
+				Distance = distance / length;
 			}
 
 			public float SignedDistance(Vertex vertex)
 			{
 				return Vector3f.Dot(Normal, vertex.Position) + Distance;
+			}
+
+			public float SignedDistance(Vector3f position)
+			{
+				return Vector3f.Dot(Normal, position) + Distance;
+			}
+		}
+
+		public sealed class Frustum
+		{
+			internal readonly Plane[] Planes = new Plane[6];
+			private float _nearPlane = float.NaN;
+			private float _farPlane = float.NaN;
+			private float _fieldOfView = float.NaN;
+			private float _aspectRatio = float.NaN;
+
+			public void Configure(
+				float nearPlane,
+				float farPlane,
+				float fieldOfView,
+				float aspectRatio)
+			{
+				if (!float.IsFinite(nearPlane) || nearPlane <= 0f)
+					throw new ArgumentOutOfRangeException(nameof(nearPlane));
+
+				if (!float.IsFinite(farPlane) || farPlane <= nearPlane)
+					throw new ArgumentOutOfRangeException(nameof(farPlane));
+
+				if (!float.IsFinite(fieldOfView) || fieldOfView <= 0f || fieldOfView >= 180f)
+					throw new ArgumentOutOfRangeException(nameof(fieldOfView));
+
+				if (!float.IsFinite(aspectRatio) || aspectRatio <= 0f)
+					throw new ArgumentOutOfRangeException(nameof(aspectRatio));
+
+				if (nearPlane == _nearPlane &&
+					farPlane == _farPlane &&
+					fieldOfView == _fieldOfView &&
+					aspectRatio == _aspectRatio)
+					return;
+
+				float halfFovRadians = fieldOfView * MathF.PI / 360f;
+				float tanHalfFovY = MathF.Tan(halfFovRadians);
+				float tanHalfFovX = tanHalfFovY * aspectRatio;
+
+				Planes[0] = new Plane(new Vector3f(0f, 0f, 1f), -nearPlane);
+				Planes[1] = new Plane(new Vector3f(0f, 0f, -1f), farPlane);
+				Planes[2] = new Plane(new Vector3f(1f, 0f, tanHalfFovX));
+				Planes[3] = new Plane(new Vector3f(-1f, 0f, tanHalfFovX));
+				Planes[4] = new Plane(new Vector3f(0f, 1f, tanHalfFovY));
+				Planes[5] = new Plane(new Vector3f(0f, -1f, tanHalfFovY));
+
+				_nearPlane = nearPlane;
+				_farPlane = farPlane;
+				_fieldOfView = fieldOfView;
+				_aspectRatio = aspectRatio;
+			}
+
+			public bool IntersectsSphere(Vector3f center, float radius)
+			{
+				if (!float.IsFinite(radius) || radius < 0f)
+					return true;
+
+				foreach (Plane plane in Planes)
+				{
+					if (plane.SignedDistance(center) < -radius)
+						return false;
+				}
+
+				return true;
 			}
 		}
 
@@ -57,20 +131,15 @@ namespace ProTron.Graphics
 			Vertex a,
 			Vertex b,
 			Vertex c,
-			float nearPlane,
-			float farPlane,
-			float fieldOfView,
-			float aspectRatio,
+			Frustum frustum,
 			Span<ClippedTriangle> output)
 		{
+			ArgumentNullException.ThrowIfNull(frustum);
+
 			if (output.Length < MaxClippedTriangles)
 				throw new ArgumentException(
 					$"El buffer de salida debe tener al menos {MaxClippedTriangles} elementos.",
 					nameof(output));
-
-			float halfFovRadians = fieldOfView * MathF.PI / 360f;
-			float tanHalfFovY = MathF.Tan(halfFovRadians);
-			float tanHalfFovX = tanHalfFovY * aspectRatio;
 
 			Span<Vertex> firstBuffer = stackalloc Vertex[10];
 			Span<Vertex> secondBuffer = stackalloc Vertex[10];
@@ -82,15 +151,7 @@ namespace ProTron.Graphics
 			int vertexCount = 3;
 			bool wasClipped = false;
 
-			Span<Plane> planes = stackalloc Plane[6];
-			planes[0] = new Plane(new Vector3f(0f, 0f, 1f), -nearPlane);
-			planes[1] = new Plane(new Vector3f(0f, 0f, -1f), farPlane);
-			planes[2] = new Plane(new Vector3f(1f, 0f, tanHalfFovX));
-			planes[3] = new Plane(new Vector3f(-1f, 0f, tanHalfFovX));
-			planes[4] = new Plane(new Vector3f(0f, 1f, tanHalfFovY));
-			planes[5] = new Plane(new Vector3f(0f, -1f, tanHalfFovY));
-
-			foreach (Plane plane in planes)
+			foreach (Plane plane in frustum.Planes)
 			{
 				vertexCount = ClipPolygonAgainstPlane(
 					firstBuffer,

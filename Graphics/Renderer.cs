@@ -4,7 +4,6 @@ using ProTron.Geometry;
 using ProTron.Math;
 using ProTron.Objects;
 using ProTron.Rendering;
-using Raylib_cs;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,8 +22,9 @@ namespace ProTron.Graphics
 		private readonly Camera _camera;
 		private readonly Rasterizer _rasterizer;
 		private readonly Scene _scene;
+		private readonly Clipper.Frustum _frustum = new();
 		private Vector3f _lightDirectionView;
-		private Matrix4x4 _view;
+		private Matrix4x4 _view = Matrix4x4.Identity();
 		private Vertex[] _transformedVertices = Array.Empty<Vertex>();
 
 		public RendererStats Stats { get; } = new RendererStats();
@@ -36,10 +36,12 @@ namespace ProTron.Graphics
 			_projection = new Projection(viewport);
 			_rasterizer = rasterizer;
 			_rasterizer.Stats = Stats;
+			ConfigureProjectionAndFrustum();
 		}
 
 		public void BeginFrame()
 		{
+			ConfigureProjectionAndFrustum();
 			_view = _camera.GetViewMatrix();
 
 			Vector4f light = _view * _scene.DirectionalLight.WorldDirection.ToVector4(0f);
@@ -58,6 +60,21 @@ namespace ProTron.Graphics
 			Geometry.Mesh mesh = obj.Mesh;
 			Matrix4x4 world = obj.Transform.GetWorldMatrix();
 			Matrix4x4 worldView = _view * world;
+			BoundingSphere bounds = mesh.GetBoundingSphere();
+			Vector4f center = worldView * bounds.Center.ToVector4();
+			float maximumScale = MathF.Max(
+				MathF.Abs(obj.Transform.Scale.X),
+				MathF.Max(
+					MathF.Abs(obj.Transform.Scale.Y),
+					MathF.Abs(obj.Transform.Scale.Z)));
+
+			if (!_frustum.IntersectsSphere(
+				new Vector3f(center.X, center.Y, center.Z),
+				bounds.Radius * maximumScale))
+			{
+				Stats.IncrementObjectsCulled();
+				return;
+			}
 
 			EnsureVertexCapacity(mesh.Vertices.Count);
 
@@ -94,10 +111,7 @@ namespace ProTron.Graphics
 					a,
 					b,
 					c,
-					_camera.NearPlane,
-					_camera.FarPlane,
-					_camera.FieldOfView,
-					_projection.AspectRatio,
+					_frustum,
 					clippedTriangles);
 
 				if (clipResult.WasRejected)
@@ -111,7 +125,7 @@ namespace ProTron.Graphics
 						clippedTriangles[i],
 						triangle,
 						shadedColor,
-						obj.Material.Texture);
+						obj.Material);
 				}
 			}
 		}
@@ -138,13 +152,21 @@ namespace ProTron.Graphics
 			ClippedTriangle triangle,
 			Triangle original,
 			uint color,
-			Texture? texture)
+			Material material)
 		{
 			VertexOut o1 = ProjectVertex(triangle.A);
 			VertexOut o2 = ProjectVertex(triangle.B);
 			VertexOut o3 = ProjectVertex(triangle.C);
 
-			_rasterizer.DrawFilledTriangle(o1, o2, o3, color, texture);
+			_rasterizer.DrawFilledTriangle(
+				o1,
+				o2,
+				o3,
+				color,
+				material.Texture,
+				material.Sampler,
+				material.BlendMode,
+				material.AlphaCutoff);
 			Stats.IncrementTrianglesRendered();
 			//_rasterizer.DrawTriangleWireframe(o1, o2, o3, original, 0xff00ff00);
 		}
@@ -160,12 +182,20 @@ namespace ProTron.Graphics
 			float inverseDepth = 1.0f / v.Position.Z;
 
 			return new VertexOut(
-				_projection.Project(
-					v.Position, 
-					_camera.FieldOfView),
+				_projection.Project(v.Position, inverseDepth),
 				inverseDepth,
 				v.UV.X * inverseDepth,
 				v.UV.Y * inverseDepth);
+		}
+
+		private void ConfigureProjectionAndFrustum()
+		{
+			_projection.Configure(_camera.FieldOfView);
+			_frustum.Configure(
+				_camera.NearPlane,
+				_camera.FarPlane,
+				_camera.FieldOfView,
+				_projection.AspectRatio);
 		}
 
 		private bool IsBackFace(Vector3f v1, Vector3f v2, Vector3f v3)

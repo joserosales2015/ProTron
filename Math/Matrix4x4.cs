@@ -6,7 +6,7 @@ using System.Threading.Tasks;
 
 namespace ProTron.Math
 {
-	public class Matrix4x4
+	public struct Matrix4x4
 	{
 		public float M11, M12, M13, M14;
 		public float M21, M22, M23, M24;

@@ -15,10 +15,14 @@ namespace ProTron.Rendering
 		// Rendimiento
 		public float FPS { get; internal set; }
 		public float FrameTime { get; internal set; }
+		public float UpdateTime { get; internal set; }
+		public float RenderTime { get; internal set; }
+		public float PresentTime { get; internal set; }
 
 		// Escena
 		public int DrawCalls { get; internal set; }
 		public int Objects { get; internal set; }
+		public int ObjectsCulled { get; internal set; }
 
 		// Geometría
 		public int VerticesTransformed { get; internal set; }
@@ -49,6 +53,7 @@ namespace ProTron.Rendering
 		{
 			DrawCalls = 0;
 			Objects = 0;
+			ObjectsCulled = 0;
 
 			VerticesTransformed = 0;
 			TrianglesSubmitted = 0;
@@ -104,6 +109,9 @@ namespace ProTron.Rendering
 		public void IncrementObjects() => Objects++;
 
 		[Conditional("DEBUG")]
+		public void IncrementObjectsCulled() => ObjectsCulled++;
+
+		[Conditional("DEBUG")]
 		public void IncrementVerticesTransformed() => VerticesTransformed++;
 
 		[Conditional("DEBUG")]
@@ -129,6 +137,28 @@ namespace ProTron.Rendering
 
 		[Conditional("DEBUG")]
 		public void IncrementDepthRejected() => DepthRejected++;
+
+		[Conditional("DEBUG")]
+		public void AddRasterization(
+			int depthTests,
+			int depthRejected,
+			int pixelsDrawn)
+		{
+			DepthTests += depthTests;
+			DepthRejected += depthRejected;
+			PixelsDrawn += pixelsDrawn;
+		}
+
+		[Conditional("DEBUG")]
+		public void UpdateStageTimes(
+			float updateTime,
+			float renderTime,
+			float presentTime)
+		{
+			UpdateTime = updateTime;
+			RenderTime = renderTime;
+			PresentTime = presentTime;
+		}
 
 	}
 }

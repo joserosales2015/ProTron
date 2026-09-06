@@ -15,6 +15,8 @@ namespace ProTron.Objects
 		protected GameObject()
 		{
 			Transform = new Transform();
+			Mesh = new Mesh();
+			Material = new Material(uint.MaxValue);
 		}
 
 		public virtual void Update(float deltaTime)

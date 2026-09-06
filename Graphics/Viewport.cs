@@ -8,9 +8,9 @@ namespace ProTron.Graphics
 {
 	public class Viewport
 	{
-		public int Width { get; set; }
+		public int Width { get; }
 
-		public int Height { get; set; }
+		public int Height { get; }
 
 		public float CenterX => Width / 2f;
 
@@ -20,6 +20,12 @@ namespace ProTron.Graphics
 
 		public Viewport(int width, int height)
 		{
+			if (width <= 0)
+				throw new ArgumentOutOfRangeException(nameof(width));
+
+			if (height <= 0)
+				throw new ArgumentOutOfRangeException(nameof(height));
+
 			Width = width;
 			Height = height;
 		}

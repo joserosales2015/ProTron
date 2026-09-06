@@ -57,6 +57,11 @@ namespace ProTron.Buffer
 			return _pixels[y * Width + x];
 		}
 
+		public uint GetPixelUnchecked(int x, int y)
+		{
+			return _pixels[y * Width + x];
+		}
+
 		
 	}
 }

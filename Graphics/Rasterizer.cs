@@ -1,11 +1,13 @@
 ﻿using ProTron.Buffer;
 using ProTron.Geometry;
+using ProTron.Objects;
 using ProTron.Rendering;
 using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using System.Runtime.CompilerServices;
 using System.Text;
 using System.Threading.Tasks;
 using static ProTron.Geometry.Triangle;
@@ -14,10 +16,51 @@ namespace ProTron.Graphics
 {
 	public class Rasterizer
 	{
+		private const int TileSize = 16;
+		private const int ParallelTileThreshold = 128;
+
 		private readonly FrameBuffer _frameBuffer;
 		private readonly DepthBuffer _depthBuffer;
-		public RendererStats Stats;
+		public RendererStats Stats { get; set; } = new();
 		public float DepthBias { get; set; } = 0.0f;
+
+		private readonly record struct RasterSetup(
+			int MinX,
+			int MaxX,
+			int MinY,
+			int MaxY,
+			float RowW0,
+			float RowW1,
+			float RowW2,
+			float W0Dx,
+			float W1Dx,
+			float W2Dx,
+			float W0Dy,
+			float W1Dy,
+			float W2Dy,
+			float RowDepth,
+			float DepthDx,
+			float DepthDy,
+			float RowUOverZ,
+			float RowVOverZ,
+			float UOverZDx,
+			float UOverZDy,
+			float VOverZDx,
+			float VOverZDy);
+
+		private enum TileCoverage
+		{
+			Rejected,
+			Partial,
+			Full
+		}
+
+		private struct RasterCounters
+		{
+			public int DepthTests { get; set; }
+			public int DepthRejected { get; set; }
+			public int PixelsDrawn { get; set; }
+		}
 
 		public Rasterizer(
 			FrameBuffer frameBuffer,
@@ -44,7 +87,10 @@ namespace ProTron.Graphics
 			VertexOut v2,
 			VertexOut v3,
 			uint baseColor,
-			Texture? texture = null)
+			Texture? texture,
+			in TextureSampler sampler,
+			MaterialBlendMode blendMode,
+			byte alphaCutoff)
 		{
 			int minX = (int)MathF.Floor(MathF.Min(v1.Position.X, MathF.Min(v2.Position.X, v3.Position.X)));
 			int maxX = (int)MathF.Ceiling(MathF.Max(v1.Position.X, MathF.Max(v2.Position.X, v3.Position.X)));
@@ -95,6 +141,71 @@ namespace ProTron.Graphics
 			float uOverZDy = w0dy * v1.UOverZ + w1dy * v2.UOverZ + w2dy * v3.UOverZ;
 			float vOverZDx = w0dx * v1.VOverZ + w1dx * v2.VOverZ + w2dx * v3.VOverZ;
 			float vOverZDy = w0dy * v1.VOverZ + w1dy * v2.VOverZ + w2dy * v3.VOverZ;
+			RasterSetup setup = new(
+				minX,
+				maxX,
+				minY,
+				maxY,
+				rowW0,
+				rowW1,
+				rowW2,
+				w0dx,
+				w1dx,
+				w2dx,
+				w0dy,
+				w1dy,
+				w2dy,
+				rowDepth,
+				depthDx,
+				depthDy,
+				rowUOverZ,
+				rowVOverZ,
+				uOverZDx,
+				uOverZDy,
+				vOverZDx,
+				vOverZDy);
+
+			if (blendMode == MaterialBlendMode.Opaque)
+			{
+				if (texture is null)
+				{
+					DrawOpaqueSolid(setup, baseColor);
+					return;
+				}
+
+				if (sampler.Filter == TextureFilterMode.Nearest)
+				{
+					DrawOpaqueNearest(setup, baseColor, texture, sampler);
+					return;
+				}
+			}
+
+			float mipLevel = texture is not null &&
+				sampler.Filter == TextureFilterMode.Trilinear
+				? EstimateMipLevel(
+					v1,
+					v2,
+					v3,
+					depthDx,
+					depthDy,
+					uOverZDx,
+					uOverZDy,
+					vOverZDx,
+					vOverZDy,
+					texture)
+				: 0f;
+
+			if (blendMode == MaterialBlendMode.Opaque && texture is not null)
+			{
+				DrawOpaqueFiltered(setup, baseColor, texture, sampler, mipLevel);
+				return;
+			}
+
+			#if DEBUG
+			int depthTests = 0;
+			int depthRejected = 0;
+			int pixelsDrawn = 0;
+			#endif
 
 			for (int y = minY; y <= maxY; y++)
 			{
@@ -107,14 +218,17 @@ namespace ProTron.Graphics
 
 				for (int x = minX; x <= maxX; x++)
 				{
-					if (w0 >= 0 && w1 >= 0 && w2 >= 0)
+					if (w0 >= 0 && w1 >= 0 && w2 >= 0 &&
+						depth > 0f && float.IsFinite(depth))
 					{
-						Stats.IncrementDepthTests();
-						if (_depthBuffer.TestAndSet(x, y, depth))
+						#if DEBUG
+						depthTests++;
+						#endif
+						if (_depthBuffer.Test(x, y, depth))
 						{
 							uint pixelColor = baseColor;
 
-							if (texture is not null && depth > 0f)
+							if (texture is not null)
 							{
 								float z = 1f / depth;
 								float u = uOverZ * z;
@@ -122,17 +236,42 @@ namespace ProTron.Graphics
 
 								pixelColor = ColorUtils.Multiply(
 									baseColor,
-									texture.SampleNearest(u, v));
+									texture.Sample(u, v, sampler, mipLevel));
+							}
+
+							byte alpha = ColorUtils.GetAlpha(pixelColor);
+
+							if (blendMode == MaterialBlendMode.Cutout && alpha < alphaCutoff)
+								goto AdvancePixel;
+
+							if (blendMode == MaterialBlendMode.AlphaBlend)
+							{
+								if (alpha == 0)
+									goto AdvancePixel;
+
+								uint destination = _frameBuffer.GetPixelUnchecked(x, y);
+								pixelColor = ColorUtils.AlphaBlend(pixelColor, destination);
+							}
+							else
+							{
+								_depthBuffer.Set(x, y, depth);
+								pixelColor = ColorUtils.WithAlpha(pixelColor, 255);
 							}
 
 							_frameBuffer.PutPixelUnChecked(x, y, pixelColor);
-							Stats.IncrementPixelsDrawn();
+							#if DEBUG
+							pixelsDrawn++;
+							#endif
 						}
 						else
 						{
-							Stats.IncrementDepthRejected();
+							#if DEBUG
+							depthRejected++;
+							#endif
 						}
 					}
+
+				AdvancePixel:
 					w0 += w0dx;
 					w1 += w1dx;
 					w2 += w2dx;
@@ -150,6 +289,458 @@ namespace ProTron.Graphics
 				rowUOverZ += uOverZDy;
 				rowVOverZ += vOverZDy;
 			}
+
+			#if DEBUG
+			Stats.AddRasterization(depthTests, depthRejected, pixelsDrawn);
+			#endif
+		}
+
+		private void DrawOpaqueSolid(in RasterSetup setup, uint baseColor)
+		{
+			uint opaqueColor = ColorUtils.WithAlpha(baseColor, 255);
+			int tileCount = GetTileCount(setup);
+
+			#if !DEBUG
+			if (tileCount >= ParallelTileThreshold && Environment.ProcessorCount > 1)
+			{
+				RasterSetup setupCopy = setup;
+				Parallel.For(0, tileCount, tileIndex =>
+				{
+					RasterCounters ignored = default;
+					DrawOpaqueSolidTile(setupCopy, tileIndex, opaqueColor, ref ignored);
+				});
+				return;
+			}
+			#endif
+
+			RasterCounters counters = default;
+
+			for (int tileIndex = 0; tileIndex < tileCount; tileIndex++)
+				DrawOpaqueSolidTile(setup, tileIndex, opaqueColor, ref counters);
+
+			#if DEBUG
+			Stats.AddRasterization(
+				counters.DepthTests,
+				counters.DepthRejected,
+				counters.PixelsDrawn);
+			#endif
+		}
+
+		private void DrawOpaqueNearest(
+			in RasterSetup setup,
+			uint baseColor,
+			Texture texture,
+			in TextureSampler sampler)
+		{
+			TextureAddressMode addressU = sampler.AddressU;
+			TextureAddressMode addressV = sampler.AddressV;
+			int tileCount = GetTileCount(setup);
+
+			#if !DEBUG
+			if (tileCount >= ParallelTileThreshold && Environment.ProcessorCount > 1)
+			{
+				RasterSetup setupCopy = setup;
+				Parallel.For(0, tileCount, tileIndex =>
+				{
+					RasterCounters ignored = default;
+					DrawOpaqueNearestTile(
+						setupCopy,
+						tileIndex,
+						baseColor,
+						texture,
+						addressU,
+						addressV,
+						ref ignored);
+				});
+				return;
+			}
+			#endif
+
+			RasterCounters counters = default;
+
+			for (int tileIndex = 0; tileIndex < tileCount; tileIndex++)
+			{
+				DrawOpaqueNearestTile(
+					setup,
+					tileIndex,
+					baseColor,
+					texture,
+					addressU,
+					addressV,
+					ref counters);
+			}
+
+			#if DEBUG
+			Stats.AddRasterization(
+				counters.DepthTests,
+				counters.DepthRejected,
+				counters.PixelsDrawn);
+			#endif
+		}
+
+		private void DrawOpaqueSolidTile(
+			in RasterSetup setup,
+			int tileIndex,
+			uint color,
+			ref RasterCounters counters)
+		{
+			GetTileBounds(
+				setup,
+				tileIndex,
+				out int minX,
+				out int maxX,
+				out int minY,
+				out int maxY,
+				out int offsetX,
+				out int offsetY);
+
+			float tileW0 = setup.RowW0 + offsetX * setup.W0Dx + offsetY * setup.W0Dy;
+			float tileW1 = setup.RowW1 + offsetX * setup.W1Dx + offsetY * setup.W1Dy;
+			float tileW2 = setup.RowW2 + offsetX * setup.W2Dx + offsetY * setup.W2Dy;
+			TileCoverage coverage = ClassifyTile(
+				setup, tileW0, tileW1, tileW2, maxX - minX + 1, maxY - minY + 1);
+
+			if (coverage == TileCoverage.Rejected)
+				return;
+
+			bool fullyCovered = coverage == TileCoverage.Full;
+			float rowW0 = tileW0;
+			float rowW1 = tileW1;
+			float rowW2 = tileW2;
+			float rowDepth = setup.RowDepth + offsetX * setup.DepthDx + offsetY * setup.DepthDy;
+
+			for (int y = minY; y <= maxY; y++)
+			{
+				float w0 = rowW0;
+				float w1 = rowW1;
+				float w2 = rowW2;
+				float depth = rowDepth;
+
+				for (int x = minX; x <= maxX; x++)
+				{
+					if ((fullyCovered || (w0 >= 0f && w1 >= 0f && w2 >= 0f)) && depth > 0f)
+					{
+						#if DEBUG
+						counters.DepthTests++;
+						#endif
+
+						if (_depthBuffer.TestAndSet(x, y, depth))
+						{
+							_frameBuffer.PutPixelUnChecked(x, y, color);
+							#if DEBUG
+							counters.PixelsDrawn++;
+							#endif
+						}
+						#if DEBUG
+						else
+						{
+							counters.DepthRejected++;
+						}
+						#endif
+					}
+
+					w0 += setup.W0Dx;
+					w1 += setup.W1Dx;
+					w2 += setup.W2Dx;
+					depth += setup.DepthDx;
+				}
+
+				rowW0 += setup.W0Dy;
+				rowW1 += setup.W1Dy;
+				rowW2 += setup.W2Dy;
+				rowDepth += setup.DepthDy;
+			}
+		}
+
+		private void DrawOpaqueNearestTile(
+			in RasterSetup setup,
+			int tileIndex,
+			uint baseColor,
+			Texture texture,
+			TextureAddressMode addressU,
+			TextureAddressMode addressV,
+			ref RasterCounters counters)
+		{
+			GetTileBounds(
+				setup,
+				tileIndex,
+				out int minX,
+				out int maxX,
+				out int minY,
+				out int maxY,
+				out int offsetX,
+				out int offsetY);
+
+			float tileW0 = setup.RowW0 + offsetX * setup.W0Dx + offsetY * setup.W0Dy;
+			float tileW1 = setup.RowW1 + offsetX * setup.W1Dx + offsetY * setup.W1Dy;
+			float tileW2 = setup.RowW2 + offsetX * setup.W2Dx + offsetY * setup.W2Dy;
+			TileCoverage coverage = ClassifyTile(
+				setup, tileW0, tileW1, tileW2, maxX - minX + 1, maxY - minY + 1);
+
+			if (coverage == TileCoverage.Rejected)
+				return;
+
+			bool fullyCovered = coverage == TileCoverage.Full;
+			float rowW0 = tileW0;
+			float rowW1 = tileW1;
+			float rowW2 = tileW2;
+			float rowDepth = setup.RowDepth + offsetX * setup.DepthDx + offsetY * setup.DepthDy;
+			float rowUOverZ = setup.RowUOverZ + offsetX * setup.UOverZDx + offsetY * setup.UOverZDy;
+			float rowVOverZ = setup.RowVOverZ + offsetX * setup.VOverZDx + offsetY * setup.VOverZDy;
+
+			for (int y = minY; y <= maxY; y++)
+			{
+				float w0 = rowW0;
+				float w1 = rowW1;
+				float w2 = rowW2;
+				float depth = rowDepth;
+				float uOverZ = rowUOverZ;
+				float vOverZ = rowVOverZ;
+
+				for (int x = minX; x <= maxX; x++)
+				{
+					if ((fullyCovered || (w0 >= 0f && w1 >= 0f && w2 >= 0f)) && depth > 0f)
+					{
+						#if DEBUG
+						counters.DepthTests++;
+						#endif
+
+						if (_depthBuffer.TestAndSet(x, y, depth))
+						{
+							float z = FastReciprocal(depth);
+							uint texel = texture.SampleNearestUnchecked(
+								uOverZ * z,
+								vOverZ * z,
+								addressU,
+								addressV);
+							uint pixelColor = ColorUtils.MultiplyRgbOpaque(baseColor, texel);
+
+							_frameBuffer.PutPixelUnChecked(x, y, pixelColor);
+							#if DEBUG
+							counters.PixelsDrawn++;
+							#endif
+						}
+						#if DEBUG
+						else
+						{
+							counters.DepthRejected++;
+						}
+						#endif
+					}
+
+					w0 += setup.W0Dx;
+					w1 += setup.W1Dx;
+					w2 += setup.W2Dx;
+					depth += setup.DepthDx;
+					uOverZ += setup.UOverZDx;
+					vOverZ += setup.VOverZDx;
+				}
+
+				rowW0 += setup.W0Dy;
+				rowW1 += setup.W1Dy;
+				rowW2 += setup.W2Dy;
+				rowDepth += setup.DepthDy;
+				rowUOverZ += setup.UOverZDy;
+				rowVOverZ += setup.VOverZDy;
+			}
+		}
+
+		private static int GetTileCount(in RasterSetup setup)
+		{
+			int columns = (setup.MaxX - setup.MinX) / TileSize + 1;
+			int rows = (setup.MaxY - setup.MinY) / TileSize + 1;
+			return checked(columns * rows);
+		}
+
+		private static void GetTileBounds(
+			in RasterSetup setup,
+			int tileIndex,
+			out int minX,
+			out int maxX,
+			out int minY,
+			out int maxY,
+			out int offsetX,
+			out int offsetY)
+		{
+			int columns = (setup.MaxX - setup.MinX) / TileSize + 1;
+			int tileX = tileIndex % columns;
+			int tileY = tileIndex / columns;
+			offsetX = tileX * TileSize;
+			offsetY = tileY * TileSize;
+			minX = setup.MinX + offsetX;
+			minY = setup.MinY + offsetY;
+			maxX = System.Math.Min(minX + TileSize - 1, setup.MaxX);
+			maxY = System.Math.Min(minY + TileSize - 1, setup.MaxY);
+		}
+
+		private static TileCoverage ClassifyTile(
+			in RasterSetup setup,
+			float w0,
+			float w1,
+			float w2,
+			int width,
+			int height)
+		{
+			float spanX = width - 1;
+			float spanY = height - 1;
+			GetEdgeRange(w0, setup.W0Dx, setup.W0Dy, spanX, spanY, out float min0, out float max0);
+			GetEdgeRange(w1, setup.W1Dx, setup.W1Dy, spanX, spanY, out float min1, out float max1);
+			GetEdgeRange(w2, setup.W2Dx, setup.W2Dy, spanX, spanY, out float min2, out float max2);
+
+			if (max0 < 0f || max1 < 0f || max2 < 0f)
+				return TileCoverage.Rejected;
+
+			return min0 >= 0f && min1 >= 0f && min2 >= 0f
+				? TileCoverage.Full
+				: TileCoverage.Partial;
+		}
+
+		private static void GetEdgeRange(
+			float start,
+			float dx,
+			float dy,
+			float spanX,
+			float spanY,
+			out float minimum,
+			out float maximum)
+		{
+			float x = dx * spanX;
+			float y = dy * spanY;
+			minimum = start + MathF.Min(0f, x) + MathF.Min(0f, y);
+			maximum = start + MathF.Max(0f, x) + MathF.Max(0f, y);
+		}
+
+		[MethodImpl(MethodImplOptions.AggressiveInlining)]
+		private static float FastReciprocal(float value)
+		{
+			float estimate = MathF.ReciprocalEstimate(value);
+			return estimate * (2f - value * estimate);
+		}
+
+		private void DrawOpaqueFiltered(
+			in RasterSetup setup,
+			uint baseColor,
+			Texture texture,
+			in TextureSampler sampler,
+			float mipLevel)
+		{
+			float rowW0 = setup.RowW0;
+			float rowW1 = setup.RowW1;
+			float rowW2 = setup.RowW2;
+			float rowDepth = setup.RowDepth;
+			float rowUOverZ = setup.RowUOverZ;
+			float rowVOverZ = setup.RowVOverZ;
+			TextureAddressMode addressU = sampler.AddressU;
+			TextureAddressMode addressV = sampler.AddressV;
+			bool useTrilinear = sampler.Filter == TextureFilterMode.Trilinear;
+			#if DEBUG
+			int depthTests = 0;
+			int depthRejected = 0;
+			int pixelsDrawn = 0;
+			#endif
+
+			for (int y = setup.MinY; y <= setup.MaxY; y++)
+			{
+				float w0 = rowW0;
+				float w1 = rowW1;
+				float w2 = rowW2;
+				float depth = rowDepth;
+				float uOverZ = rowUOverZ;
+				float vOverZ = rowVOverZ;
+
+				for (int x = setup.MinX; x <= setup.MaxX; x++)
+				{
+					if (w0 >= 0f && w1 >= 0f && w2 >= 0f && depth > 0f)
+					{
+						#if DEBUG
+						depthTests++;
+						#endif
+
+						if (_depthBuffer.TestAndSet(x, y, depth))
+						{
+							float z = 1f / depth;
+							float u = uOverZ * z;
+							float v = vOverZ * z;
+							uint texel = useTrilinear
+								? texture.SampleTrilinearUnchecked(
+									u, v, mipLevel, addressU, addressV)
+								: texture.SampleBilinearUnchecked(
+									u, v, addressU, addressV);
+							uint pixelColor = ColorUtils.MultiplyRgbOpaque(baseColor, texel);
+
+							_frameBuffer.PutPixelUnChecked(x, y, pixelColor);
+							#if DEBUG
+							pixelsDrawn++;
+							#endif
+						}
+						else
+						{
+							#if DEBUG
+							depthRejected++;
+							#endif
+						}
+					}
+
+					w0 += setup.W0Dx;
+					w1 += setup.W1Dx;
+					w2 += setup.W2Dx;
+					depth += setup.DepthDx;
+					uOverZ += setup.UOverZDx;
+					vOverZ += setup.VOverZDx;
+				}
+
+				rowW0 += setup.W0Dy;
+				rowW1 += setup.W1Dy;
+				rowW2 += setup.W2Dy;
+				rowDepth += setup.DepthDy;
+				rowUOverZ += setup.UOverZDy;
+				rowVOverZ += setup.VOverZDy;
+			}
+
+			#if DEBUG
+			Stats.AddRasterization(depthTests, depthRejected, pixelsDrawn);
+			#endif
+		}
+
+		private static float EstimateMipLevel(
+			VertexOut v1,
+			VertexOut v2,
+			VertexOut v3,
+			float depthDx,
+			float depthDy,
+			float uOverZDx,
+			float uOverZDy,
+			float vOverZDx,
+			float vOverZDy,
+			Texture texture)
+		{
+			const float oneThird = 1f / 3f;
+			float depth = (v1.InverseDepth + v2.InverseDepth + v3.InverseDepth) * oneThird;
+
+			if (depth <= 0f || !float.IsFinite(depth))
+				return 0f;
+
+			float uOverZ = (v1.UOverZ + v2.UOverZ + v3.UOverZ) * oneThird;
+			float vOverZ = (v1.VOverZ + v2.VOverZ + v3.VOverZ) * oneThird;
+			float inverseDepthSquared = 1f / (depth * depth);
+
+			float duDx = (uOverZDx * depth - uOverZ * depthDx) * inverseDepthSquared;
+			float duDy = (uOverZDy * depth - uOverZ * depthDy) * inverseDepthSquared;
+			float dvDx = (vOverZDx * depth - vOverZ * depthDx) * inverseDepthSquared;
+			float dvDy = (vOverZDy * depth - vOverZ * depthDy) * inverseDepthSquared;
+
+			float footprintX = MathF.Sqrt(
+				duDx * duDx * texture.Width * texture.Width +
+				dvDx * dvDx * texture.Height * texture.Height);
+			float footprintY = MathF.Sqrt(
+				duDy * duDy * texture.Width * texture.Width +
+				dvDy * dvDy * texture.Height * texture.Height);
+			float footprint = MathF.Max(footprintX, footprintY);
+
+			if (footprint <= 1f || !float.IsFinite(footprint))
+				return 0f;
+
+			return System.Math.Clamp(MathF.Log2(footprint), 0f, texture.MaxMipLevel);
 		}
 
 		public void DrawLine(VertexOut a, VertexOut b, uint color, float depthBias = 0f)

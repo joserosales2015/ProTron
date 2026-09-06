@@ -48,5 +48,15 @@ namespace ProTron.Buffer
 
 			return false;
 		}
+
+		public bool Test(int x, int y, float depth)
+		{
+			return depth > _depth[y * Width + x];
+		}
+
+		public void Set(int x, int y, float depth)
+		{
+			_depth[y * Width + x] = depth;
+		}
 	}
 }

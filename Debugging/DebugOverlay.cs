@@ -24,7 +24,19 @@ namespace ProTron.Debugging
 			Raylib.DrawText($"Frame: {stats.FrameTime:F2} ms", x, y, 20, Color.White);
 			y += lineHeight;
 
+			Raylib.DrawText($"Update: {stats.UpdateTime:F2} ms", x, y, 20, Color.White);
+			y += lineHeight;
+
+			Raylib.DrawText($"Render CPU: {stats.RenderTime:F2} ms", x, y, 20, Color.White);
+			y += lineHeight;
+
+			Raylib.DrawText($"Present: {stats.PresentTime:F2} ms", x, y, 20, Color.White);
+			y += lineHeight;
+
 			Raylib.DrawText($"Objects: {stats.Objects}", x, y, 20, Color.White);
+			y += lineHeight;
+
+			Raylib.DrawText($"Objects Culled: {stats.ObjectsCulled}", x, y, 20, Color.White);
 			y += lineHeight;
 
 			Raylib.DrawText($"Draw Calls: {stats.DrawCalls}", x, y, 20, Color.White);
