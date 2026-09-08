@@ -3,6 +3,7 @@ using ProTron.Graphics;
 using ProTron.Math;
 using ProTron.Objects;
 using Raylib_cs;
+using Model = ProTron.Objects.Model;
 
 namespace ProTron
 {
@@ -23,16 +24,45 @@ namespace ProTron
 			scene.DirectionalLight.Intensity = 0.82f;
 			scene.DirectionalLight.WorldDirection = new Vector3f(0.0f, -1.0f, -1.0f).Normalized();
 
-			List<GameObject> cubes = new()
+			// Un checkerboard procedural es la mejor forma de verificar que
+			// las UV de una malla cargada desde archivo están bien: si se ve
+			// distorsionado o con costuras raras, el problema es la UV, no el
+			// renderer.
+			Texture uvCheck = Texture.CreateCheckerboard(
+				256, 256, 8,
+				ColorUtils.PackRgba(230, 230, 230),
+				ColorUtils.PackRgba(40, 110, 200));
+
+			List<GameObject> models = new()
 			{
-				new Cube(2) { Transform = { Position = new Vector3f(-2, 0, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
-				new Cube(2) { Transform = { Position = new Vector3f(2, 0, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
-				new Cube(2) { Transform = { Position = new Vector3f(0, 0, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
-				new Cube(2) { Transform = { Position = new Vector3f(0, -2, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
-				new Cube(2) { Transform = { Position = new Vector3f(0, 2, 8) }, Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255)) { TexturePath = "Assets/696.png" } },
+				new Model("Assets/Models/torus.obj", new Vector3f(15f, 25f, 0f))
+				{
+					Transform = { Position = new Vector3f(-3.5f, 0, 10) },
+					Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255))
+					{
+						Texture = uvCheck
+					}
+				},
+				new Model("Assets/Models/mobius.obj", new Vector3f(0f, 30f, 0f))
+				{
+					Transform = { Position = new Vector3f(0f, 0, 10) },
+					Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255))
+					{
+						Texture = uvCheck
+					}
+				},
+				new Model("Assets/Models/face.obj", new Vector3f(0f, 20f, 0f))
+				{
+					Transform = { Position = new Vector3f(3.5f, 0, 10) },
+					Material = new ProTron.Objects.Material(ColorUtils.PackRgba(255, 255, 255))
+					{
+						Texture = uvCheck
+					}
+				},
 			};
 
-			scene.AddRange(cubes);
+
+			scene.AddRange(models);
 			engine.LoadScene(scene);
 			engine.Run();
 		}
