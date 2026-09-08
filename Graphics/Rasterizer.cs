@@ -21,6 +21,10 @@ namespace ProTron.Graphics
 
 		private readonly FrameBuffer _frameBuffer;
 		private readonly DepthBuffer _depthBuffer;
+		private readonly int _tileColumns;
+		private readonly List<int>[] _tileBins;
+		private readonly List<int> _occupiedTiles = new();
+		private readonly List<OpaqueTriangleCommand> _opaqueTriangles = new();
 		public RendererStats Stats { get; set; } = new();
 		public float DepthBias { get; set; } = 0.0f;
 
@@ -55,6 +59,13 @@ namespace ProTron.Graphics
 			Full
 		}
 
+		private readonly record struct OpaqueTriangleCommand(
+			RasterSetup Setup,
+			uint BaseColor,
+			Texture? Texture,
+			TextureAddressMode AddressU,
+			TextureAddressMode AddressV);
+
 		private struct RasterCounters
 		{
 			public int DepthTests { get; set; }
@@ -68,6 +79,98 @@ namespace ProTron.Graphics
 		{
 			_frameBuffer = frameBuffer;
 			_depthBuffer = depthBuffer;
+			_tileColumns = (frameBuffer.Width + TileSize - 1) / TileSize;
+			int tileRows = (frameBuffer.Height + TileSize - 1) / TileSize;
+			_tileBins = new List<int>[checked(_tileColumns * tileRows)];
+
+			for (int i = 0; i < _tileBins.Length; i++)
+				_tileBins[i] = new List<int>();
+		}
+
+		public void BeginFrame()
+		{
+			for (int i = 0; i < _occupiedTiles.Count; i++)
+				_tileBins[_occupiedTiles[i]].Clear();
+
+			_occupiedTiles.Clear();
+			_opaqueTriangles.Clear();
+		}
+
+		public bool TryQueueOpaqueTriangle(
+			VertexOut v1,
+			VertexOut v2,
+			VertexOut v3,
+			uint baseColor,
+			Texture? texture,
+			in TextureSampler sampler,
+			MaterialBlendMode blendMode)
+		{
+			if (blendMode != MaterialBlendMode.Opaque ||
+				(texture is not null && sampler.Filter != TextureFilterMode.Nearest))
+			{
+				return false;
+			}
+
+			if (!TryCreateRasterSetup(v1, v2, v3, out RasterSetup setup))
+				return true;
+
+			int commandIndex = _opaqueTriangles.Count;
+			_opaqueTriangles.Add(new OpaqueTriangleCommand(
+				setup,
+				baseColor,
+				texture,
+				sampler.AddressU,
+				sampler.AddressV));
+
+			int minTileX = setup.MinX / TileSize;
+			int maxTileX = setup.MaxX / TileSize;
+			int minTileY = setup.MinY / TileSize;
+			int maxTileY = setup.MaxY / TileSize;
+
+			for (int tileY = minTileY; tileY <= maxTileY; tileY++)
+			{
+				int rowStart = tileY * _tileColumns;
+
+				for (int tileX = minTileX; tileX <= maxTileX; tileX++)
+				{
+					int tileIndex = rowStart + tileX;
+					List<int> bin = _tileBins[tileIndex];
+
+					if (bin.Count == 0)
+						_occupiedTiles.Add(tileIndex);
+
+					bin.Add(commandIndex);
+				}
+			}
+
+			return true;
+		}
+
+		public void FlushOpaqueTriangles()
+		{
+			#if !DEBUG
+			if (_occupiedTiles.Count >= ParallelTileThreshold && Environment.ProcessorCount > 1)
+			{
+				Parallel.For(0, _occupiedTiles.Count, occupiedIndex =>
+				{
+					RasterCounters ignored = default;
+					DrawFrameTile(_occupiedTiles[occupiedIndex], ref ignored);
+				});
+				return;
+			}
+			#endif
+
+			RasterCounters counters = default;
+
+			for (int i = 0; i < _occupiedTiles.Count; i++)
+				DrawFrameTile(_occupiedTiles[i], ref counters);
+
+			#if DEBUG
+			Stats.AddRasterization(
+				counters.DepthTests,
+				counters.DepthRejected,
+				counters.PixelsDrawn);
+			#endif
 		}
 
 		public void DrawTriangleWireframe(VertexOut v1, VertexOut v2, VertexOut v3, Triangle triangle, uint baseColor)
@@ -92,78 +195,31 @@ namespace ProTron.Graphics
 			MaterialBlendMode blendMode,
 			byte alphaCutoff)
 		{
-			int minX = (int)MathF.Floor(MathF.Min(v1.Position.X, MathF.Min(v2.Position.X, v3.Position.X)));
-			int maxX = (int)MathF.Ceiling(MathF.Max(v1.Position.X, MathF.Max(v2.Position.X, v3.Position.X)));
-
-			int minY = (int)MathF.Floor(MathF.Min(v1.Position.Y, MathF.Min(v2.Position.Y, v3.Position.Y)));
-			int maxY = (int)MathF.Ceiling(MathF.Max(v1.Position.Y, MathF.Max(v2.Position.Y, v3.Position.Y)));
-
-			minX = System.Math.Max(0, minX);
-			minY = System.Math.Max(0, minY);
-
-			maxX = System.Math.Min(_frameBuffer.Width - 1, maxX);
-			maxY = System.Math.Min(_frameBuffer.Height - 1, maxY);
-
-			float area = Edge(v1.Position, v2.Position, v3.Position);
-
-			if (area == 0)
+			if (!TryCreateRasterSetup(v1, v2, v3, out RasterSetup setup))
 				return;
 
-			float invArea = 1.0f / area;
-
-			float e0dx = (v3.Position.Y - v2.Position.Y);
-			float e0dy = -(v3.Position.X - v2.Position.X);
-			float e1dx = (v1.Position.Y - v3.Position.Y);
-			float e1dy = -(v1.Position.X - v3.Position.X);
-			float e2dx = (v2.Position.Y - v1.Position.Y);
-			float e2dy = -(v2.Position.X - v1.Position.X);
-
-			float w0dx = e0dx * invArea;
-			float w0dy = e0dy * invArea;
-			float w1dx = e1dx * invArea;
-			float w1dy = e1dy * invArea;
-			float w2dx = e2dx * invArea;
-			float w2dy = e2dy * invArea;
-
-			Vector2 p0 = new Vector2(minX + 0.5f, minY + 0.5f);
-
-			float rowW0 = Edge(v2.Position, v3.Position, p0) * invArea;
-			float rowW1 = Edge(v3.Position, v1.Position, p0) * invArea;
-			float rowW2 = Edge(v1.Position, v2.Position, p0) * invArea;
-			
-			float rowDepth = rowW0 * v1.InverseDepth + rowW1 * v2.InverseDepth + rowW2 * v3.InverseDepth;
-			float rowUOverZ = rowW0 * v1.UOverZ + rowW1 * v2.UOverZ + rowW2 * v3.UOverZ;
-			float rowVOverZ = rowW0 * v1.VOverZ + rowW1 * v2.VOverZ + rowW2 * v3.VOverZ;
-
-			float depthDx = w0dx * v1.InverseDepth + w1dx * v2.InverseDepth + w2dx * v3.InverseDepth;
-			float depthDy = w0dy * v1.InverseDepth + w1dy * v2.InverseDepth + w2dy * v3.InverseDepth;
-			float uOverZDx = w0dx * v1.UOverZ + w1dx * v2.UOverZ + w2dx * v3.UOverZ;
-			float uOverZDy = w0dy * v1.UOverZ + w1dy * v2.UOverZ + w2dy * v3.UOverZ;
-			float vOverZDx = w0dx * v1.VOverZ + w1dx * v2.VOverZ + w2dx * v3.VOverZ;
-			float vOverZDy = w0dy * v1.VOverZ + w1dy * v2.VOverZ + w2dy * v3.VOverZ;
-			RasterSetup setup = new(
-				minX,
-				maxX,
-				minY,
-				maxY,
-				rowW0,
-				rowW1,
-				rowW2,
-				w0dx,
-				w1dx,
-				w2dx,
-				w0dy,
-				w1dy,
-				w2dy,
-				rowDepth,
-				depthDx,
-				depthDy,
-				rowUOverZ,
-				rowVOverZ,
-				uOverZDx,
-				uOverZDy,
-				vOverZDx,
-				vOverZDy);
+			int minX = setup.MinX;
+			int maxX = setup.MaxX;
+			int minY = setup.MinY;
+			int maxY = setup.MaxY;
+			float rowW0 = setup.RowW0;
+			float rowW1 = setup.RowW1;
+			float rowW2 = setup.RowW2;
+			float w0dx = setup.W0Dx;
+			float w1dx = setup.W1Dx;
+			float w2dx = setup.W2Dx;
+			float w0dy = setup.W0Dy;
+			float w1dy = setup.W1Dy;
+			float w2dy = setup.W2Dy;
+			float rowDepth = setup.RowDepth;
+			float depthDx = setup.DepthDx;
+			float depthDy = setup.DepthDy;
+			float rowUOverZ = setup.RowUOverZ;
+			float rowVOverZ = setup.RowVOverZ;
+			float uOverZDx = setup.UOverZDx;
+			float uOverZDy = setup.UOverZDy;
+			float vOverZDx = setup.VOverZDx;
+			float vOverZDy = setup.VOverZDy;
 
 			if (blendMode == MaterialBlendMode.Opaque)
 			{
@@ -293,6 +349,155 @@ namespace ProTron.Graphics
 			#if DEBUG
 			Stats.AddRasterization(depthTests, depthRejected, pixelsDrawn);
 			#endif
+		}
+
+		private bool TryCreateRasterSetup(
+			VertexOut v1,
+			VertexOut v2,
+			VertexOut v3,
+			out RasterSetup setup)
+		{
+			setup = default;
+
+			if (!float.IsFinite(v1.Position.X) || !float.IsFinite(v1.Position.Y) ||
+				!float.IsFinite(v2.Position.X) || !float.IsFinite(v2.Position.Y) ||
+				!float.IsFinite(v3.Position.X) || !float.IsFinite(v3.Position.Y))
+			{
+				return false;
+			}
+
+			float minimumX = MathF.Min(v1.Position.X, MathF.Min(v2.Position.X, v3.Position.X));
+			float maximumX = MathF.Max(v1.Position.X, MathF.Max(v2.Position.X, v3.Position.X));
+			float minimumY = MathF.Min(v1.Position.Y, MathF.Min(v2.Position.Y, v3.Position.Y));
+			float maximumY = MathF.Max(v1.Position.Y, MathF.Max(v2.Position.Y, v3.Position.Y));
+
+			if (maximumX < 0f || maximumY < 0f ||
+				minimumX > _frameBuffer.Width - 1 || minimumY > _frameBuffer.Height - 1)
+			{
+				return false;
+			}
+
+			int minX = (int)MathF.Max(0f, MathF.Floor(minimumX));
+			int maxX = (int)MathF.Min(_frameBuffer.Width - 1, MathF.Ceiling(maximumX));
+			int minY = (int)MathF.Max(0f, MathF.Floor(minimumY));
+			int maxY = (int)MathF.Min(_frameBuffer.Height - 1, MathF.Ceiling(maximumY));
+			float area = Edge(v1.Position, v2.Position, v3.Position);
+
+			if (area == 0f || !float.IsFinite(area))
+				return false;
+
+			float invArea = 1f / area;
+			float w0dx = (v3.Position.Y - v2.Position.Y) * invArea;
+			float w0dy = -(v3.Position.X - v2.Position.X) * invArea;
+			float w1dx = (v1.Position.Y - v3.Position.Y) * invArea;
+			float w1dy = -(v1.Position.X - v3.Position.X) * invArea;
+			float w2dx = (v2.Position.Y - v1.Position.Y) * invArea;
+			float w2dy = -(v2.Position.X - v1.Position.X) * invArea;
+			Vector2 p0 = new(minX + 0.5f, minY + 0.5f);
+			float rowW0 = Edge(v2.Position, v3.Position, p0) * invArea;
+			float rowW1 = Edge(v3.Position, v1.Position, p0) * invArea;
+			float rowW2 = Edge(v1.Position, v2.Position, p0) * invArea;
+			float rowDepth = rowW0 * v1.InverseDepth + rowW1 * v2.InverseDepth + rowW2 * v3.InverseDepth;
+			float rowUOverZ = rowW0 * v1.UOverZ + rowW1 * v2.UOverZ + rowW2 * v3.UOverZ;
+			float rowVOverZ = rowW0 * v1.VOverZ + rowW1 * v2.VOverZ + rowW2 * v3.VOverZ;
+			float depthDx = w0dx * v1.InverseDepth + w1dx * v2.InverseDepth + w2dx * v3.InverseDepth;
+			float depthDy = w0dy * v1.InverseDepth + w1dy * v2.InverseDepth + w2dy * v3.InverseDepth;
+			float uOverZDx = w0dx * v1.UOverZ + w1dx * v2.UOverZ + w2dx * v3.UOverZ;
+			float uOverZDy = w0dy * v1.UOverZ + w1dy * v2.UOverZ + w2dy * v3.UOverZ;
+			float vOverZDx = w0dx * v1.VOverZ + w1dx * v2.VOverZ + w2dx * v3.VOverZ;
+			float vOverZDy = w0dy * v1.VOverZ + w1dy * v2.VOverZ + w2dy * v3.VOverZ;
+
+			setup = new RasterSetup(
+				minX,
+				maxX,
+				minY,
+				maxY,
+				rowW0,
+				rowW1,
+				rowW2,
+				w0dx,
+				w1dx,
+				w2dx,
+				w0dy,
+				w1dy,
+				w2dy,
+				rowDepth,
+				depthDx,
+				depthDy,
+				rowUOverZ,
+				rowVOverZ,
+				uOverZDx,
+				uOverZDy,
+				vOverZDx,
+				vOverZDy);
+			return true;
+		}
+
+		private void DrawFrameTile(int tileIndex, ref RasterCounters counters)
+		{
+			int tileX = tileIndex % _tileColumns;
+			int tileY = tileIndex / _tileColumns;
+			int tileMinX = tileX * TileSize;
+			int tileMinY = tileY * TileSize;
+			int tileMaxX = System.Math.Min(tileMinX + TileSize - 1, _frameBuffer.Width - 1);
+			int tileMaxY = System.Math.Min(tileMinY + TileSize - 1, _frameBuffer.Height - 1);
+			List<int> bin = _tileBins[tileIndex];
+
+			for (int i = 0; i < bin.Count; i++)
+			{
+				OpaqueTriangleCommand command = _opaqueTriangles[bin[i]];
+				RasterSetup triangleSetup = command.Setup;
+				int minX = System.Math.Max(tileMinX, triangleSetup.MinX);
+				int maxX = System.Math.Min(tileMaxX, triangleSetup.MaxX);
+				int minY = System.Math.Max(tileMinY, triangleSetup.MinY);
+				int maxY = System.Math.Min(tileMaxY, triangleSetup.MaxY);
+				RasterSetup tileSetup = SliceSetup(triangleSetup, minX, maxX, minY, maxY);
+
+				if (command.Texture is Texture texture)
+				{
+					DrawOpaqueNearestTile(
+						tileSetup,
+						0,
+						command.BaseColor,
+						texture,
+						command.AddressU,
+						command.AddressV,
+						ref counters);
+				}
+				else
+				{
+					DrawOpaqueSolidTile(
+						tileSetup,
+						0,
+						ColorUtils.WithAlpha(command.BaseColor, 255),
+						ref counters);
+				}
+			}
+		}
+
+		private static RasterSetup SliceSetup(
+			in RasterSetup setup,
+			int minX,
+			int maxX,
+			int minY,
+			int maxY)
+		{
+			int offsetX = minX - setup.MinX;
+			int offsetY = minY - setup.MinY;
+
+			return setup with
+			{
+				MinX = minX,
+				MaxX = maxX,
+				MinY = minY,
+				MaxY = maxY,
+				RowW0 = setup.RowW0 + offsetX * setup.W0Dx + offsetY * setup.W0Dy,
+				RowW1 = setup.RowW1 + offsetX * setup.W1Dx + offsetY * setup.W1Dy,
+				RowW2 = setup.RowW2 + offsetX * setup.W2Dx + offsetY * setup.W2Dy,
+				RowDepth = setup.RowDepth + offsetX * setup.DepthDx + offsetY * setup.DepthDy,
+				RowUOverZ = setup.RowUOverZ + offsetX * setup.UOverZDx + offsetY * setup.UOverZDy,
+				RowVOverZ = setup.RowVOverZ + offsetX * setup.VOverZDx + offsetY * setup.VOverZDy
+			};
 		}
 
 		private void DrawOpaqueSolid(in RasterSetup setup, uint baseColor)

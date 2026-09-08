@@ -89,6 +89,8 @@ namespace ProTron.Core
 				renderer.Draw(obj);
 			}
 
+			renderer.FlushOpaqueTriangles();
+
 			foreach (GameObject obj in _renderQueue.TransparentObjects)
 			{
 				renderer.Draw(obj);

@@ -41,6 +41,7 @@ namespace ProTron.Graphics
 
 		public void BeginFrame()
 		{
+			_rasterizer.BeginFrame();
 			ConfigureProjectionAndFrustum();
 			_view = _camera.GetViewMatrix();
 
@@ -50,6 +51,11 @@ namespace ProTron.Graphics
 				light.X,
 				light.Y,
 				light.Z).Normalized();
+		}
+
+		public void FlushOpaqueTriangles()
+		{
+			_rasterizer.FlushOpaqueTriangles();
 		}
 
 		public void Draw(GameObject obj)
@@ -158,15 +164,25 @@ namespace ProTron.Graphics
 			VertexOut o2 = ProjectVertex(triangle.B);
 			VertexOut o3 = ProjectVertex(triangle.C);
 
-			_rasterizer.DrawFilledTriangle(
+			if (!_rasterizer.TryQueueOpaqueTriangle(
 				o1,
 				o2,
 				o3,
 				color,
 				material.Texture,
 				material.Sampler,
-				material.BlendMode,
-				material.AlphaCutoff);
+				material.BlendMode))
+			{
+				_rasterizer.DrawFilledTriangle(
+					o1,
+					o2,
+					o3,
+					color,
+					material.Texture,
+					material.Sampler,
+					material.BlendMode,
+					material.AlphaCutoff);
+			}
 			Stats.IncrementTrianglesRendered();
 			//_rasterizer.DrawTriangleWireframe(o1, o2, o3, original, 0xff00ff00);
 		}
